@@ -27,6 +27,9 @@ const serve = async (session: Session): Promise<void> => {
   await new Promise<void>((resolve) => {
     const stop = () => {
       server.close(() => resolve());
+      // An open browser tab keeps polling over keep-alive connections, which
+      // would otherwise hold close() open forever.
+      server.closeAllConnections();
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
