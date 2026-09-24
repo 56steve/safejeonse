@@ -4,10 +4,6 @@
 
 Built on [Midnight](https://midnight.network/) for the Midnight Korea Hackathon 2026.
 
-![Compact 0.31.0](https://img.shields.io/badge/Compact-0.31.0-1abc9c) ![Tests](https://img.shields.io/badge/tests-35%20passing-2e7d32) ![Network](https://img.shields.io/badge/network-local%20devnet%20%7C%20preprod-555)
-
----
-
 ## The problem
 
 In Korea, a jeonse (전세) tenant hands the landlord a huge lump-sum deposit, often most of their savings. If the building is later sold at auction, the money is paid out in order of priority: the mortgage first, then tenants who moved in earlier, and only then the new tenant.
@@ -29,7 +25,7 @@ SafeJeonse lets the landlord **prove** the building is safe for a new deposit, w
 mortgage + every earlier tenant's deposit + your deposit  ≤  70% of the building's value
 ```
 
-The renter learns one thing: **SAFE (안전)** or **RISKY (위험)**. Nobody learns how much Park or Lee paid.
+The renter learns one thing: **SAFE (안전)** or **RISKY (위험)**. Nobody learns what any other tenant paid.
 
 ## How it works
 
@@ -66,8 +62,6 @@ When a tenant moves out and gets their deposit back, they withdraw their own slo
 | Certificate: offered amount + SAFE/RISKY | On-chain | Everyone |
 
 ## How Midnight is used
-
-This project only works because Midnight lets a contract compute over private data and publish just the result.
 
 | Midnight feature | Where | What it does here |
 |---|---|---|
@@ -124,14 +118,14 @@ You'll see:
 ```
 ── 3. Choi asks: is a 7,000만 deposit safe here? ────────────────
   ✓ Kim proves the verdict over every declared deposit (23.8s)
-  Verdict for 7,000만원: RISKY ⚠️
+  Verdict for 7,000만원: RISKY
 
 ── 4. A dishonest landlord tries to hide a deposit ─────────────
   ✓ The circuit refused: "Deposit openings do not match the on-chain declarations"
 
 ── 5. Lee moves out and gets her deposit back ──────────────────
   The old certificate is now marked out of date: yes
-  Verdict for 7,000만원: SAFE ✅
+  Verdict for 7,000만원: SAFE
 
 ── 6. What is actually stored on-chain ─────────────────────────
   No individual deposit appears anywhere. Only commitments and the verdict.
@@ -192,9 +186,7 @@ cli/        terminal app and the scripted demo
 ui/         React web app (Lace wallet)
 ```
 
-## Security notes and limits
-
-We'd rather be upfront about what this prototype does and doesn't guarantee.
+## Limitations
 
 - **The verdict leaks a little by design.** Anyone who sees many certificates for different amounts could narrow down the total of the earlier deposits. Individual deposits still stay hidden. Under current Korean law a renter can already ask for these records in full, so revealing only the total is still less than what they could see today. Only the landlord can issue certificates, which limits how many are made.
 - **Register data is entered by the landlord.** Building value and mortgage are public and anyone can check them against the 등기부등본, but the contract doesn't fetch them itself. A production version would take them from an official data feed or attester.

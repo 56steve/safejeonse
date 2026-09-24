@@ -14,7 +14,7 @@ services:
     environment:
       RUST_LOG: "indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,fastrace_opentelemetry=info,info"
       # Random 32-byte hex-encoded secret used to make the standalone indexer run.
-      # Only needed to satisfy the config schema – not meant for secure use.
+      # Only needed to satisfy the config schema, not meant for secure use.
       APP__INFRA__SECRET: "303132333435363738393031323334353637383930313233343536373839303132"
       APP__INFRA__NODE__URL: "ws://node:9944"
     depends_on:

@@ -26,7 +26,7 @@ export const heading = (text: string): void => {
   say(bold(cyan(`── ${text} `.padEnd(64, '─'))));
 };
 
-export const verdictText = (safe: boolean): string => (safe ? green(bold('SAFE ✅')) : red(bold('RISKY ⚠️')));
+export const verdictText = (safe: boolean): string => (safe ? green(bold('SAFE')) : red(bold('RISKY')));
 
 export const renderBuilding = (state: SafeJeonseDerivedState): string[] => {
   const { building } = state;
