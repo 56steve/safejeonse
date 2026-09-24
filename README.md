@@ -1,277 +1,214 @@
-# Bulletin Board DApp
+# 안심전세 ZK (SafeJeonse)
 
-This project is built on the [Midnight Network](https://midnight.network/).
+**Check that a jeonse deposit is safe before you sign, without anyone revealing what other tenants paid.**
 
-[![Generic badge](https://img.shields.io/badge/Compact%20Compiler-0.30.0-1abc9c.svg)](https://shields.io/)
-[![Generic badge](https://img.shields.io/badge/TypeScript-5.9.3-blue.svg)](https://shields.io/)
+Built on [Midnight](https://midnight.network/) for the Midnight Korea Hackathon 2026.
 
+![Compact 0.31.0](https://img.shields.io/badge/Compact-0.31.0-1abc9c) ![Tests](https://img.shields.io/badge/tests-35%20passing-2e7d32) ![Network](https://img.shields.io/badge/network-local%20devnet%20%7C%20preprod-555)
 
-> **Use this repo as a template. Do not fork it.**
->  
-> This repository is intended to be used via GitHub’s “Use this template” flow.  
-> Forking this repo is discouraged, as forks are not tracked as independent projects.
+---
 
-A Midnight smart contract example demonstrating a simple one-item bulletin board with zero-knowledge proofs on testnet. Users can post a single message at a time, and only the message author can remove it.
+## The problem
 
-## Project Structure
+In Korea, a jeonse (전세) tenant hands the landlord a huge lump-sum deposit, often most of their savings. If the building is later sold at auction, the money is paid out in order of priority: the mortgage first, then tenants who moved in earlier, and only then the new tenant.
+
+So before signing, a renter needs to know one thing: **how much is already owed on this building?**
+
+The mortgage is easy to find because it's on the public property register (등기부등본). The deposits owed to earlier tenants (선순위 보증금) are not. In a multi-unit building (다가구) they're the missing piece, and that information gap is how most jeonse fraud (전세사기) happens. The landlord says "don't worry, it's safe," and the renter can't check.
+
+The 2023 law change lets a renter ask to see earlier tenants' move-in and deposit records. That helps, but it has two problems:
+
+1. **It exposes other tenants.** Your neighbours' deposits and move-in dates get shown to a stranger.
+2. **It's still paperwork.** The records come on paper, with visits to government offices, at the moment you're under pressure to sign.
+
+## The idea
+
+SafeJeonse lets the landlord **prove** the building is safe for a new deposit, without revealing any existing tenant's deposit.
 
 ```
-bulletin-board/
-├── contract/               # Smart contract in Compact language
-│   └── src/               # Contract source and utilities
-├── api/                   # Methods, classes and types for CLI and UI
-├── bboard-cli/            # Command-line interface
-│   └── src/               # CLI implementation
-└── bboard-ui/             # Web browser interface
-    └── src/               # Web UI implementation
+mortgage + every earlier tenant's deposit + your deposit  ≤  70% of the building's value
 ```
 
-## Prerequisites
+The renter learns one thing: **SAFE (안전)** or **RISKY (위험)**. Nobody learns how much Park or Lee paid.
 
-### 1. Node.js Version Check
+## How it works
 
-You need Node.js:
+```mermaid
+sequenceDiagram
+    participant L as Landlord
+    participant T as Existing tenant
+    participant C as Midnight contract
+    participant R as Renter
+
+    L->>C: Register building (public value + mortgage)
+    L->>T: Lease code: deposit amount + random salt
+    Note over T: Checks the amount against the paper lease
+    T->>C: declareDeposit (ZK proof)<br/>stores only hash(amount, salt)
+    R->>L: "Is 7,000만원 safe here?"
+    L->>C: certify(7,000만원) (ZK proof over ALL sealed deposits)
+    C-->>R: RISKY / SAFE, nothing else
+```
+
+1. **The landlord registers the building.** Only public register data goes on-chain: the building value (공시가격), the senior liens (근저당) and the safe ratio.
+2. **Each tenant seals their own deposit.** The landlord gives them a lease code (the amount plus a random salt). The tenant checks the amount against their paper lease and submits it. Only a salted hash is stored on-chain, in a slot owned by the tenant's key. Since the tenant submits it, **the landlord can't leave a deposit out or make it look smaller.**
+3. **The landlord proves the verdict.** For a proposed new deposit, the landlord's machine builds a zero-knowledge proof. The proof shows that the private amounts behind **every** on-chain commitment add up, together with the mortgage and the new deposit, to at most the limit. Only the boolean result is disclosed.
+
+When a tenant moves out and gets their deposit back, they withdraw their own slot. Any older certificate is then automatically flagged as out of date.
+
+## What is public and what stays private
+
+| Data | Where it lives | Who can see it |
+|---|---|---|
+| Building value, mortgage, safe ratio | On-chain | Everyone (it's already on the public register) |
+| Number of sealed deposits | On-chain | Everyone |
+| Each tenant's deposit amount | Tenant's and landlord's devices only | **Nobody else** |
+| Commitment `hash(amount, salt)` | On-chain | Everyone, but it reveals nothing without the salt |
+| Certificate: offered amount + SAFE/RISKY | On-chain | Everyone |
+
+## How Midnight is used
+
+This project only works because Midnight lets a contract compute over private data and publish just the result.
+
+| Midnight feature | Where | What it does here |
+|---|---|---|
+| **Witnesses** (private inputs) | [`safejeonse.compact:61-64`](contract/src/safejeonse.compact#L61-L64) | Deposit amounts and salts are fed into circuits from local private state and never leave the device |
+| **`persistentHash` commitments** | [`depositCommitment`](contract/src/safejeonse.compact#L70) | Each deposit is stored as `hash(domain, amount, salt)` |
+| **ZK circuit over private data** | [`certify`](contract/src/safejeonse.compact#L152) | Opens all 8 commitments inside the circuit, sums the amounts and compares against the limit |
+| **Selective disclosure (`disclose`)** | [`certify`](contract/src/safejeonse.compact#L167-L170) | Only the SAFE/RISKY boolean and the offered amount are made public |
+| **Key-bound authorization** | [`declareDeposit`](contract/src/safejeonse.compact#L119), [`withdrawDeposit`](contract/src/safejeonse.compact#L137) | Tenant and landlord public keys are derived from secret keys with role separation, so only the declaring tenant can withdraw and only the registered landlord can certify |
+| **Ledger `Map` + `Counter` state** | [`safejeonse.compact:21-51`](contract/src/safejeonse.compact#L21-L51) | Slots, owners and a revision counter that marks stale certificates |
+
+If a landlord feeds the circuit a forged amount, proof generation fails with `Deposit openings do not match the on-chain declarations`. The demo shows this happening on a real chain.
+
+## Run it
+
+### Prerequisites
+
+| Tool | Version | Check |
+|---|---|---|
+| Node.js | 24.11.1 or newer | `node --version` |
+| Docker Desktop | running | `docker info` |
+| Compact compiler | 0.31.0 | `compact compile --version` |
+
+Install the Compact compiler if you don't have it:
 
 ```bash
-node --version
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+compact update 0.31.0
 ```
 
-Expected output: `v24.11.1` or higher. The repository includes an [.nvmrc](./.nvmrc) pinned to `24.11.1`.
-
-If you get a lower version: [Install Node.js LTS](https://nodejs.org/).
-
-### 2. Docker Installation
-
-The [proof server](https://docs.midnight.network/develop/tutorial/using/proof-server) runs in Docker and is required for both CLI and UI to generate zero-knowledge proofs:
-
-```bash
-docker --version
-```
-
-Expected output: `Docker version X.X.X`.
-
-If Docker is not found: [Install Docker Desktop](https://docs.docker.com/desktop/). Make sure Docker Desktop is running.
-
-### 3. Lace Wallet Extension (UI Only)
-
-For the web interface, install the official Lace wallet extension on [Chrome Store](https://chromewebstore.google.com/detail/lace/gafhhkghbfjjkeiendhlofajokpaflmk) or the [Edge Store](https://microsoftedge.microsoft.com/addons/detail/lace/efeiemlfnahiidnjglmehaihacglceia) (tested with version 1.36.0).
-
-After installing, set up the Midnight wallet:
-
-1. Create a **new wallet** — Midnight will appear as a network option
-2. Set **Network** to **Preprod**
-3. Set **Proof server** to **Local (http://localhost:6300)** — this must point to your local proof server started via Docker
-4. Click **Enter Wallet**
-5. Fund your wallet with tNIGHT tokens from the [Preprod Faucet](https://midnight-tmnight-preprod.nethermind.dev/)
-6. Go to **Tokens** in the wallet, click **Generate tDUST**, and confirm the transaction — tDUST tokens are required to pay transaction fees on preprod
-
-## Setup Instructions
-
-### Install Project Dependencies
+### 1. Install, compile and test (about 1 minute)
 
 ```bash
 npm install
+npm run compact     # compiles the contract and generates the ZK circuits
+npm test            # 35 tests: contract circuits + API logic
 ```
 
-This repository uses npm workspaces. Run installation once from the repository root.
+Expected output from `npm run compact`:
 
-### Compile the Smart Contract
+```
+Compiling 3 circuits:
+```
 
-The Compact compiler (`compactc 0.31.0`) generates TypeScript bindings and zero-knowledge circuits from the smart contract source code:
+### 2. Watch the whole story on a real local chain (about 4 minutes)
+
+This starts a local Midnight node, indexer and proof server in Docker, then runs every step as a real transaction with a real zero-knowledge proof:
 
 ```bash
-cd contract
-npm run compact    # Compiles the Compact contract
-npm run build      # Copies compiled files to dist/
-cd ..
+npm run demo
 ```
 
-Expected output:
+You'll see:
 
 ```
-> compact
-> compact compile src/bboard.compact ./src/managed/bboard
+── 3. Choi asks: is a 7,000만 deposit safe here? ────────────────
+  ✓ Kim proves the verdict over every declared deposit (23.8s)
+  Verdict for 7,000만원: RISKY ⚠️
 
-Compiling 2 circuits:
-  circuit "post" (k=14, rows=10070)
-  circuit "takeDown" (k=14, rows=10087)
+── 4. A dishonest landlord tries to hide a deposit ─────────────
+  ✓ The circuit refused: "Deposit openings do not match the on-chain declarations"
 
-> build
-> rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/bboard.compact ./dist
+── 5. Lee moves out and gets her deposit back ──────────────────
+  The old certificate is now marked out of date: yes
+  Verdict for 7,000만원: SAFE ✅
 
+── 6. What is actually stored on-chain ─────────────────────────
+  No individual deposit appears anywhere. Only commitments and the verdict.
 ```
 
-### Build the CLI Interface
+The demo story, in 만원 (10,000 KRW):
+
+| | Amount |
+|---|---|
+| Building value | 5억 (50,000) |
+| Mortgage | 2억 (20,000) |
+| Safe limit at 70% | 3억 5,000 (35,000) |
+| Park's deposit (hidden) | 8,000 |
+| Lee's deposit (hidden) | 5,000 |
+| Choi is offered | 7,000 → 40,000 total → **RISKY** |
+| After Lee moves out | 35,000 total → **SAFE** |
+
+If the demo stops with `spawn docker-credential-desktop ENOENT`, Docker's helper tools aren't on your PATH. On macOS run:
 
 ```bash
-cd bboard-cli
-npm run build
-cd ..
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 ```
 
-### Build the UI Interface (Optional)
-
-Only needed if you want to use the web interface:
+### 3. Try it yourself in the terminal
 
 ```bash
-cd bboard-ui
-npm run build
-cd ..
+npm run start:local
 ```
 
-## Option 1: CLI Interface
+The menu lets you register a building, create lease codes, and switch between the landlord, tenant and renter personas. Each persona has its own private state.
 
-### Start the Proof Server
-
-The CLI requires a local proof server running in Docker:
+### 4. Web app (Lace wallet, preprod)
 
 ```bash
-cd bboard-cli
-docker compose -f proof-server-local.yml up -d
+npm run build -w contract
+npm run build -w ui
+npx http-server ui/dist -p 8080 -s
 ```
 
-This uses `midnightntwrk/proof-server:8.0.3` on `http://127.0.0.1:6300`.
+Then open <http://localhost:8080>. You'll need the [Lace wallet](https://www.lace.io/) with Midnight set to **Preprod**, the proof server set to **Local** (run `docker run -p 6300:6300 midnightntwrk/proof-server:8.0.3 midnight-proof-server -v`), and some tDUST from the [faucet](https://midnight-tmnight-preprod.nethermind.dev/).
 
-### Run the CLI
+The web app lets one browser play every role so you can walk through the flow. In real use each role is a different person on their own device.
 
-```bash
-# For preprod network
-npm run preprod-remote
-
-# For preview network
-npm run preview-remote
-```
-
-### Using the CLI
-
-#### Create a Wallet
-
-1. Choose option `1` to build a fresh wallet
-2. The system will generate a wallet address and seed
-3. **Save both the address and seed** - you'll need them later
-
-Expected output is similar to:
+## Project layout
 
 ```
-Your wallet seed is: [64-character hex string]
-Using unshielded address: mn_addr_preprod1hdvtst70zfgd8wvh7l8ppp7mcrxnjn56wc5hlxpwflz3fxdykaesrw0ln4 waiting for funds...
+contract/   Compact contract, witnesses and simulator tests
+  src/safejeonse.compact       the contract (3 ZK circuits)
+  src/witnesses.ts             private state and witness functions
+  src/test/                    15 circuit tests (fraud cases included)
+api/        shared TypeScript API used by the CLI and the web app
+  src/index.ts                 deploy / join / declare / withdraw / certify
+  src/lease.ts                 lease codes and slot matching
+  src/derive.ts                public + private view state
+  src/test/                    20 tests
+cli/        terminal app and the scripted demo
+  src/demo-story.ts            the story `npm run demo` runs
+ui/         React web app (Lace wallet)
 ```
 
-#### Fund Your Wallet
+## Security notes and limits
 
-Before deploying contracts, you need testnet tokens.
+We'd rather be upfront about what this prototype does and doesn't guarantee.
 
-1. Copy your wallet address from the output above
-2. Visit the [faucet](https://midnight-tmnight-preprod.nethermind.dev/)
-3. Paste your address and request funds
-4. Wait for the CLI to detect the funds (takes 2-3 minutes)
+- **The verdict leaks a little by design.** Anyone who sees many certificates for different amounts could narrow down the total of the earlier deposits. Individual deposits still stay hidden. Under current Korean law a renter can already ask for these records in full, so revealing only the total is still less than what they could see today. Only the landlord can issue certificates, which limits how many are made.
+- **Register data is entered by the landlord.** Building value and mortgage are public and anyone can check them against the 등기부등본, but the contract doesn't fetch them itself. A production version would take them from an official data feed or attester.
+- **Tenants need to take part.** A tenant who never seals their deposit isn't counted. In production, sealing should happen where leases are already registered (확정일자 at the community centre or online), so every lease is included automatically.
+- **Fixed size.** A building has up to 8 unit slots, which fits a typical 다가구. It's a constant in the contract.
+- **Lease-code salts are shared with the landlord.** The landlord already knows each deposit (they received it), so this reveals nothing new to them.
 
-Expected output after funding is similar to:
+## Roadmap
 
-```
-Your NIGHT wallet balance is: 1000000000
-```
+- Pull building value and liens from an official attester instead of trusting the form
+- Integrate sealing with 확정일자 registration so no lease can be skipped
+- A shareable certificate link a renter can verify on their phone
+- Support larger buildings (more slots) and HUG deposit-insurance ratios
 
-#### Deploy Your Contract
+## Credits
 
-1. Choose the contract deployment option
-2. Wait for deployment (takes ~30 seconds)
-3. **Save the contract address** for future use
-
-Expected output:
-
-```
-Deployed bulletin board contract at address: [contract address]
-```
-
-#### Use the Bulletin Board
-
-You can now:
-
-- **Post** a message to the bulletin board
-- **View** the current message
-- **Remove** your message (only if you posted it)
-- **Exit** when done
-
-Each action creates a real transaction on Midnight Testnet using zero-knowledge proofs generated by the proof server.
-
-## Option 2: Web UI Interface
-
-The web interface uses the same proof server and requires additional browser setup.
-
-### Start the Proof Server (if not already running)
-
-If you haven't started the proof server for the CLI, start it now:
-
-```bash
-cd bboard-cli
-docker compose -f proof-server-local.yml up -d
-cd ..
-```
-
-Verify it's running:
-
-```bash
-docker ps
-```
-
-### Start the Web Interface
-
-The UI can run against preprod or preview networks:
-
-```bash
-cd bboard-ui
-
-# For preprod network
-npm run build:start
-
-# For preview network
-npm run build:start:preview
-```
-
-The UI will be available at:
-
-- http://127.0.0.1:8080
-
-### Browser Setup
-
-1. **Open the UI URL** in a browser with Lace wallet extension installed
-2. **Set up Lace wallet** if it's your first time
-3. **Authorize the application** when Lace wallet prompts
-4. Use the bulletin board web interface
-
-## Useful Links
-
-- Get Testnet tNIGHT on [Preprod Faucet](https://midnight-tmnight-preprod.nethermind.dev/) or [Preview Faucet](https://midnight-tmnight-preview.nethermind.dev/)
-- [Midnight Documentation](https://docs.midnight.network/examples/dapps/bboard) - Complete developer guide
-- [Compatibility Matrix](https://docs.midnight.network/relnotes/support-matrix) - Current supported Midnight component versions
-- [Compact Language Guide](https://docs.midnight.network/compact/writing) - Smart contract language reference
-- Get Lace wallet on the [Chrome Store](https://chromewebstore.google.com/detail/lace/gafhhkghbfjjkeiendhlofajokpaflmk) or the [Edge Store](https://microsoftedge.microsoft.com/addons/detail/lace/efeiemlfnahiidnjglmehaihacglceia)
-
-## Troubleshooting
-
-| Common Issue                       | Solution                                                                                                  |
-| ---------------------------------- |-----------------------------------------------------------------------------------------------------------|
-| `npm install` fails                | Ensure you're using Node `v24.11.1` or newer. Older Node versions can install with warnings but are not the target runtime |
-| Contract compilation fails         | Ensure the Compact toolchain is installed and run `npm run compact` from `contract/`                      |
-| Network connection timeout         | CLI requires internet connection, restart if connection times out                                         |
-| Token funding takes too long       | Wait 1-2 minutes, funding is automatic in CLI                                                             |
-| "Application not authorized" error | Start proof server: `docker compose -f proof-server-local.yml up -d`                                      |
-| Lace wallet not detected           | Install Lace wallet browser extension and refresh page                                                    |
-| Docker issues                      | Ensure Docker Desktop is running, check `docker --version`                                                |
-| Port 6300 in use                   | Run `docker compose down` then restart services                                                           |
-| Dependencies won't install         | Use Node.js LTS version. For older npm versions, you may need `--legacy-peer-deps`                        |
-| Contract deployment fails          | Verify wallet has sufficient balance and network connection                                               |
-
-## Notes
-
-- CLI and UI can run simultaneously and share the same proof server
-- Proof server (Docker) is required for both CLI and UI to generate zero-knowledge proofs
-- Contract must be compiled before building CLI or UI
-- Fund your wallet using the testnet faucet before deploying contracts
-
-## Implementation Notes
-
-- **Transaction fee configuration**  
-  The default `additionalFeeOverhead` value (`500_000_000_000_000_000n`) from `@midnight-ntwrk/testkit-js` is required on the `undeployed` network. Lower values can fail with `BalanceCheckOverspend` on the node side. On remote networks, that overhead requires too much dust, so the CLI overrides it to `1_000n`.
-- CLI private state is stored per contract address, matching the `Midnight.js 4.x` private-state provider model.
+Scaffolded from the official [midnightntwrk/example-bboard](https://github.com/midnightntwrk/example-bboard) template (Apache-2.0). Wallet and environment bootstrapping in `cli/` and `ui/` is adapted from it.

@@ -2,7 +2,7 @@
   "name": "safejeonse",
   "version": "0.1.0",
   "author": "Steve",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -64,5 +64,16 @@
   },
   "resolutions": {
     "@midnight-ntwrk/wallet-sdk": "1.2.0"
+  },
+  "description": "Check that a jeonse deposit is safe without revealing other tenants deposits. Built on Midnight.",
+  "scripts": {
+    "compact": "npm run compact -w contract",
+    "test": "npm run test -w contract && npm run test -w api",
+    "typecheck": "npm run typecheck -w contract -w api -w cli -w ui",
+    "lint": "npm run lint -w contract -w api -w cli -w ui",
+    "build": "npm run build -w contract && npm run build -w api && npm run build -w cli && npm run build -w ui",
+    "demo": "npm run demo -w cli",
+    "start:local": "npm run standalone -w cli",
+    "start:preprod": "npm run preprod-remote -w cli"
   }
 }

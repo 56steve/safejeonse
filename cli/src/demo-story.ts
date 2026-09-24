@@ -97,7 +97,9 @@ export const demoStory = async (session: Session): Promise<void> => {
     say(red('  Unexpected: the forged certificate went through.'));
     process.exitCode = 1;
   } catch (error) {
-    say(`  ${green('✓')} The circuit refused: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    const reason = message.includes('failed assert: ') ? message.split('failed assert: ').pop() : message;
+    say(`  ${green('✓')} The circuit refused: "${reason}"`);
     say(dim(`  Park's commitment on-chain doesn't match 1,000만, so no valid proof exists.`));
   }
 

@@ -114,6 +114,10 @@ input {
   margin-top: 22px;
 }
 
+.layout > .sheet + .sheet {
+  margin-top: 0;
+}
+
 .sheet-title {
   display: flex;
   align-items: baseline;

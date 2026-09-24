@@ -18,7 +18,7 @@
     "compact": "compact compile src/safejeonse.compact ./src/managed/safejeonse",
     "lint": "eslint src",
     "prepack": "npm build",
-    "test": "vitest",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -31,5 +31,7 @@
     "globals": "^17.11.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
-  }
+  },
+  "author": "Steve",
+  "license": "Apache-2.0"
 }
