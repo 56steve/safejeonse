@@ -181,6 +181,36 @@ describe("SafeJeonse contract", () => {
       );
     });
 
+    it("reuses a slot after its tenant moves out", () => {
+      const tenants = Array.from({ length: MAX_UNITS }, () =>
+        tenant(opening(1_000n)),
+      );
+      for (const t of tenants) {
+        sim.as(t).declareDeposit();
+      }
+      // The tenant in slot 3 moves out; a new tenant must be able to move in.
+      sim.as(tenants[3]).withdrawDeposit(3n);
+      const newcomer = opening(2_000n);
+      expect(sim.as(tenant(newcomer)).declareDeposit()).toBe(3n);
+      expect(sim.getLedger().declarations.lookup(3n)).toEqual(
+        SafeJeonseSimulator.commitmentOf(newcomer),
+      );
+      // The building is full again.
+      expect(() => sim.as(tenant(opening(1_000n))).declareDeposit()).toThrow(
+        /All unit slots/,
+      );
+    });
+
+    it("rejects a slot that is already taken or does not exist", () => {
+      sim.as(tenant(opening(1_000n))).declareDeposit();
+      expect(() =>
+        sim.as(tenant(opening(1_000n))).declareDepositInSlot(0n),
+      ).toThrow(/already taken/);
+      expect(() =>
+        sim.as(tenant(opening(1_000n))).declareDepositInSlot(8n),
+      ).toThrow(/No such unit slot/);
+    });
+
     it("rejects a zero deposit", () => {
       expect(() => sim.as(tenant(opening(0n))).declareDeposit()).toThrow(
         /Deposit must be positive/,

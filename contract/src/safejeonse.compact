@@ -50,7 +50,7 @@ export ledger declarations: Map<Uint<8>, Bytes<32>>;
 // slot -> public key of the tenant who declared it.
 export ledger slotOwner: Map<Uint<8>, Bytes<32>>;
 
-// Number of slots handed out so far (append-only).
+// Number of deposits sealed right now (goes down when a tenant moves out).
 export ledger declaredCount: Counter;
 
 // Bumped on every declaration change so stale certificates are detectable.
@@ -145,21 +145,22 @@ export circuit attestRegister(value: Uint<64>, liens: Uint<64>): [] {
 }
 
 // ---------------------------------------------------------------------------
-// Tenant: declare my deposit as a hiding commitment. The landlord cannot
-// author, omit or lower it. Returns the slot number assigned.
+// Tenant: declare my deposit as a hiding commitment in a free unit slot. The
+// landlord cannot author, omit or lower it. Slots freed by tenants who moved out
+// are reused. Returns the slot the deposit was placed in.
 // ---------------------------------------------------------------------------
 
-export circuit declareDeposit(): Uint<8> {
-  const count = declaredCount.read();
-  assert(count < maxUnits(), "All unit slots in this building are taken");
-  const slot = count as Uint<8>;
+export circuit declareDeposit(slot: Uint<8>): Uint<8> {
+  const s = disclose(slot);
+  assert(s < maxUnits(), "No such unit slot");
+  assert(!slotOwner.member(s), "This unit slot is already taken");
   const opening = ownDeposit();
   assert(opening.amount > 0, "Deposit must be positive");
-  declarations.insert(disclose(slot), disclose(depositCommitment(opening)));
-  slotOwner.insert(disclose(slot), disclose(tenantKey(localSecretKey())));
+  declarations.insert(s, disclose(depositCommitment(opening)));
+  slotOwner.insert(s, disclose(tenantKey(localSecretKey())));
   declaredCount.increment(1);
   revision.increment(1);
-  return disclose(slot);
+  return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +174,7 @@ export circuit withdrawDeposit(slot: Uint<8>): [] {
   assert(slotOwner.lookup(s) == tenantKey(localSecretKey()), "Only the declaring tenant can withdraw");
   declarations.insert(s, emptyCommitment());
   slotOwner.remove(s);
+  declaredCount.decrement(1);
   revision.increment(1);
 }
 

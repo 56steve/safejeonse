@@ -121,7 +121,7 @@ const App: React.FC<{ backend: Backend }> = ({ backend }) => {
               persona === 'landlord' ? (
                 <LandlordPanel session={connection.session} state={state} />
               ) : persona === 'registrar' ? (
-                <RegistrarPanel key={state.registerUpdates.toString()} session={connection.session} state={state} />
+                <RegistrarPanel session={connection.session} state={state} />
               ) : persona === 'renter' ? (
                 <RenterPanel state={state} />
               ) : (
