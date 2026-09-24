@@ -36,6 +36,9 @@ export const ledgerRows = (ledger: Ledger): LedgerRow[] => {
   const slots = Array.from(ledger.declarations).sort(([a], [b]) => (a < b ? -1 : 1));
   return [
     { label: 'landlord', value: shortHex(ledger.landlord) },
+    { label: 'registrar', value: shortHex(ledger.registrar) },
+    { label: 'attested', value: String(ledger.attested) },
+    { label: 'attestCount', value: ledger.attestCount.toString() },
     { label: 'buildingValue', value: ledger.buildingValue.toString() },
     { label: 'seniorLiens', value: ledger.seniorLiens.toString() },
     { label: 'safeRatioPercent', value: ledger.safeRatioPercent.toString() },
@@ -112,6 +115,9 @@ export const decodeDerivedState = (json: unknown): SafeJeonseDerivedState => {
     },
     exposureLimit: big(json, 'exposureLimit'),
     isLandlord: bool(json, 'isLandlord'),
+    isRegistrar: bool(json, 'isRegistrar'),
+    attested: bool(json, 'attested'),
+    registerUpdates: big(json, 'registerUpdates'),
     slots: array(json, 'slots').map((slot) => ({
       slot: big(slot, 'slot'),
       occupied: bool(slot, 'occupied'),

@@ -20,6 +20,7 @@ import {
   UnknownDeclarationError,
   InvalidLeaseCodeError,
   formatManwon,
+  registerBuilding,
 } from '../../api/src/index';
 import { type WalletFacade } from '@midnight-ntwrk/wallet-sdk-facade';
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
@@ -49,6 +50,8 @@ export type ProviderFactory = (persona: string) => SafeJeonseProviders;
 export type Session = {
   readonly providers: ProviderFactory;
   readonly logger: Logger;
+  /** Identity of the registry office (등기소) persona for buildings set up in this session. */
+  readonly registrarSecretKey: Uint8Array;
 };
 
 const PERSONA_PATTERN = /^[a-z0-9-]{1,32}$/;
@@ -109,6 +112,15 @@ const START_QUESTION = `
   3. Exit
 > `;
 
+/** Joins as a persona; the registrar persona always uses the session's registry office key. */
+const joinAs = (session: Session, persona: string, address: string): Promise<SafeJeonseAPI> =>
+  SafeJeonseAPI.join(
+    session.providers(persona),
+    address,
+    session.logger,
+    persona === 'registrar' ? session.registrarSecretKey : undefined,
+  );
+
 const openBuilding = async (session: Session, rli: Interface): Promise<SafeJeonseAPI | null> => {
   while (true) {
     const choice = (await rli.question(START_QUESTION)).trim();
@@ -122,19 +134,21 @@ const openBuilding = async (session: Session, rli: Interface): Promise<SafeJeons
           );
           const ratioText = (await rli.question('Safe ratio in percent [70]: ')).trim();
           const safeRatioPercent = BigInt(ratioText === '' ? '70' : ratioText);
-          say(dim('Deploying the building contract. This takes a little while...'));
-          const api = await SafeJeonseAPI.deploy(
+          say(dim('Deploying the building, then the registry office attests the figures...'));
+          const { landlord } = await registerBuilding(
             session.providers('landlord'),
+            session.providers('registrar'),
             { buildingValue, seniorLiens, safeRatioPercent },
+            session.registrarSecretKey,
             session.logger,
           );
-          say(bold(`Building registered at ${api.deployedContractAddress}`));
-          return api;
+          say(bold(`Building registered at ${landlord.deployedContractAddress}`));
+          return landlord;
         }
         case '2': {
           const address = (await rli.question('Contract address: ')).trim();
           const persona = (await rli.question('Who are you? (landlord, tenant-1, renter, ...): ')).trim() || 'landlord';
-          return await SafeJeonseAPI.join(session.providers(persona), address, session.logger);
+          return await joinAs(session, persona, address);
         }
         case '3':
           return null;
@@ -154,9 +168,10 @@ Acting as ${bold(persona)}
   3. [tenant]   Declare my deposit from a lease code
   4. [tenant]   Withdraw my deposit (after moving out)
   5. [landlord] Prove whether a new deposit would be safe
-  6. Show the raw on-chain data (what everyone can see)
-  7. Switch persona
-  8. Exit
+  6. [registrar] Record a register change (for example a new mortgage)
+  7. Show the raw on-chain data (what everyone can see)
+  8. Switch persona
+  9. Exit
 > `;
 
 const mainLoop = async (session: Session, rli: Interface): Promise<void> => {
@@ -207,19 +222,26 @@ const mainLoop = async (session: Session, rli: Interface): Promise<void> => {
           say(`${formatManwon(amount)} → ${safe ? bold('SAFE') : red(bold('RISKY'))}`);
           break;
         }
-        case '6':
+        case '6': {
+          const buildingValue = await askAmount(rli, 'Building value (공시가격): ');
+          const seniorLiens = BigInt((await rli.question('Senior liens (근저당), 0 if none: ')).trim() || '0');
+          await api.attestRegister({ buildingValue, seniorLiens });
+          say(bold('Register data updated. Earlier certificates are now out of date.'));
+          break;
+        }
+        case '7':
           heading('Raw public ledger');
           printBlock(renderRawLedger(await api.queryLedger()));
           break;
-        case '7': {
-          const next = (await rli.question('Persona name (landlord, tenant-1, renter, ...): ')).trim();
+        case '8': {
+          const next = (await rli.question('Persona name (landlord, registrar, tenant-1, renter, ...): ')).trim();
           const existing = personas.get(next);
-          api = existing ?? (await SafeJeonseAPI.join(session.providers(next), address, session.logger));
+          api = existing ?? (await joinAs(session, next, address));
           personas.set(next, api);
           persona = next;
           break;
         }
-        case '8':
+        case '9':
           return;
         default:
           say(red(`Unknown choice "${choice}"`));
@@ -306,7 +328,11 @@ export const run = async (config: Config, testEnv: TestEnvironment, logger: Logg
       }
     }
 
-    const session: Session = { providers: makeProviderFactory(config, env, walletProvider, seed), logger };
+    const session: Session = {
+      providers: makeProviderFactory(config, env, walletProvider, seed),
+      logger,
+      registrarSecretKey: randomBytes(32),
+    };
     if (mode.kind === 'interactive') {
       await mainLoop(session, rli);
     } else {

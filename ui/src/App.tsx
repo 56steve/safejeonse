@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { type LedgerRow, type SafeJeonseDerivedState } from '../../api/src/index';
 import { type Backend, type BuildingSession, PERSONAS, type Persona } from './backend';
 import { Register } from './components/Register';
-import { LandlordPanel, RenterPanel, TenantPanel } from './components/Panels';
+import { LandlordPanel, RegistrarPanel, RenterPanel, TenantPanel } from './components/Panels';
 import { Start } from './components/Start';
 import { errorMessage } from './components/useAction';
 
@@ -120,6 +120,8 @@ const App: React.FC<{ backend: Backend }> = ({ backend }) => {
             {connection.kind === 'ready' && state !== null ? (
               persona === 'landlord' ? (
                 <LandlordPanel session={connection.session} state={state} />
+              ) : persona === 'registrar' ? (
+                <RegistrarPanel key={state.registerUpdates.toString()} session={connection.session} state={state} />
               ) : persona === 'renter' ? (
                 <RenterPanel state={state} />
               ) : (

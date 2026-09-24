@@ -26,7 +26,15 @@ export type SafeJeonseProviders = MidnightProviders<SafeJeonseCircuitKeys, Priva
 
 export type DeployedSafeJeonseContract = FoundContract<SafeJeonseContract>;
 
-/** Public register data a landlord enters when registering a building. All amounts in 만원. */
+/** Figures from the official property register, attested by the registry office. All amounts in 만원. */
+export type RegisterData = {
+  /** Official or appraised value of the building (공시가격 / 감정가). */
+  readonly buildingValue: bigint;
+  /** Senior liens on the property register, e.g. mortgage 채권최고액 (등기부등본). */
+  readonly seniorLiens: bigint;
+};
+
+/** Everything needed to set up a building: register figures plus the safe ratio. All amounts in 만원. */
 export type BuildingRegistration = {
   /** Official or appraised value of the building (공시가격 / 감정가). */
   readonly buildingValue: bigint;
@@ -59,6 +67,12 @@ export type SafeJeonseDerivedState = {
   /** value * ratio / 100: the most liens plus deposits the building can safely carry. */
   readonly exposureLimit: bigint;
   readonly isLandlord: boolean;
+  /** True when the current user is the registry office named by this building. */
+  readonly isRegistrar: boolean;
+  /** False until the registry office has attested the building value and liens. */
+  readonly attested: boolean;
+  /** How many times the registry office has attested or updated the register data. */
+  readonly registerUpdates: bigint;
   readonly slots: readonly SlotView[];
   readonly declaredCount: bigint;
   readonly revision: bigint;
@@ -71,7 +85,7 @@ export type SafeJeonseDerivedState = {
 };
 
 /** The roles the demo apps can act as. Each one keeps its own private state. */
-export const PERSONA_IDS = ['landlord', 'tenant-a', 'tenant-b', 'renter'] as const;
+export const PERSONA_IDS = ['landlord', 'registrar', 'tenant-a', 'tenant-b', 'renter'] as const;
 
 export type Persona = (typeof PERSONA_IDS)[number];
 

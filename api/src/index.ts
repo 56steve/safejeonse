@@ -15,6 +15,7 @@ import { type Logger } from 'pino';
 import {
   type BuildingRegistration,
   type DeployedSafeJeonseContract,
+  type RegisterData,
   type SafeJeonseContract,
   type SafeJeonseDerivedState,
   type SafeJeonseProviders,
@@ -31,7 +32,7 @@ import {
   MAX_UNITS,
 } from '../../contract/src/witnesses.js';
 import { assertValidAmount, decodeLeaseCode, encodeLeaseCode, newOpening, resolveLeaseBook } from './lease.js';
-import { deriveState } from './derive.js';
+import { deriveState, registrarPublicKey } from './derive.js';
 
 export interface DeployedSafeJeonseAPI {
   readonly deployedContractAddress: ContractAddress;
@@ -43,14 +44,23 @@ export interface DeployedSafeJeonseAPI {
   certify: (newDeposit: bigint) => Promise<boolean>;
 }
 
-export const validateRegistration = (registration: BuildingRegistration): void => {
-  assertValidAmount(registration.buildingValue);
-  if (registration.seniorLiens < 0n) {
+export const validateRegisterData = (data: RegisterData): void => {
+  assertValidAmount(data.buildingValue);
+  if (data.seniorLiens < 0n) {
     throw new RangeError('Senior liens cannot be negative');
   }
-  if (registration.safeRatioPercent < 1n || registration.safeRatioPercent > 100n) {
+};
+
+export const validateSafeRatio = (safeRatioPercent: bigint): void => {
+  if (safeRatioPercent < 1n || safeRatioPercent > 100n) {
     throw new RangeError('Safe ratio must be between 1 and 100 percent');
   }
+};
+
+/** What the landlord decides at deployment: which registry office to trust, and the safe ratio. */
+export type DeployParams = {
+  readonly registrarPublicKey: Uint8Array;
+  readonly safeRatioPercent: bigint;
 };
 
 /**
@@ -80,6 +90,17 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
       .pipe(map((contractState) => SafeJeonse.ledger(contractState.data)));
 
     this.state$ = combineLatest([ledger$, this.privateState$], deriveState);
+  }
+
+  /**
+   * Registry office: publish the building value and senior liens from the
+   * official register. Calling it again (for example after a new mortgage)
+   * marks every earlier certificate as out of date.
+   */
+  async attestRegister(data: RegisterData): Promise<void> {
+    validateRegisterData(data);
+    const txData = await this.deployedContract.callTx.attestRegister(data.buildingValue, data.seniorLiens);
+    this.logTx('attestRegister', txData.public);
   }
 
   /**
@@ -183,41 +204,42 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
     });
   }
 
-  /** Landlord: register a building by deploying a new contract. */
-  static async deploy(
-    providers: SafeJeonseProviders,
-    registration: BuildingRegistration,
-    logger?: Logger,
-  ): Promise<SafeJeonseAPI> {
-    validateRegistration(registration);
-    logger?.info({
-      deployContract: {
-        buildingValue: registration.buildingValue.toString(),
-        seniorLiens: registration.seniorLiens.toString(),
-        safeRatioPercent: registration.safeRatioPercent.toString(),
-      },
-    });
+  /** Landlord: register a building by deploying a new contract that names its registry office. */
+  static async deploy(providers: SafeJeonseProviders, params: DeployParams, logger?: Logger): Promise<SafeJeonseAPI> {
+    validateSafeRatio(params.safeRatioPercent);
+    if (params.registrarPublicKey.length !== 32) {
+      throw new RangeError('Registrar public key must be 32 bytes');
+    }
+    logger?.info({ deployContract: { safeRatioPercent: params.safeRatioPercent.toString() } });
 
     const initialPrivateState = createSafeJeonsePrivateState(utils.randomBytes(32));
     const deployed = await deployContract(providers, {
       compiledContract: CompiledSafeJeonseContract,
       privateStateId: safeJeonsePrivateStateKey,
       initialPrivateState,
-      args: [registration.buildingValue, registration.seniorLiens, registration.safeRatioPercent],
+      args: [params.registrarPublicKey, params.safeRatioPercent],
     });
 
     logger?.info({ contractDeployed: { address: deployed.deployTxData.public.contractAddress } });
     return new SafeJeonseAPI(deployed, providers, initialPrivateState, logger);
   }
 
-  /** Join an existing building, as a tenant, a prospective tenant, or its landlord. */
+  /**
+   * Join an existing building, as a tenant, a prospective tenant, its landlord or its registrar.
+   *
+   * @param secretKey Identity to use the first time this user joins. Ignored when a
+   * private state for this building already exists. Defaults to a fresh random key.
+   */
   static async join(
     providers: SafeJeonseProviders,
     contractAddress: ContractAddress,
     logger?: Logger,
+    secretKey?: Uint8Array,
   ): Promise<SafeJeonseAPI> {
     logger?.info({ joinContract: { contractAddress } });
-    const initialPrivateState = await SafeJeonseAPI.getPrivateState(providers, contractAddress);
+    providers.privateStateProvider.setContractAddress(contractAddress);
+    const existing = await providers.privateStateProvider.get(safeJeonsePrivateStateKey);
+    const initialPrivateState = existing ?? createSafeJeonsePrivateState(secretKey ?? utils.randomBytes(32));
     const found = await findDeployedContract<SafeJeonseContract>(providers, {
       contractAddress,
       compiledContract: CompiledSafeJeonseContract,
@@ -226,16 +248,36 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
     });
     return new SafeJeonseAPI(found, providers, initialPrivateState, logger);
   }
-
-  private static async getPrivateState(
-    providers: SafeJeonseProviders,
-    contractAddress: ContractAddress,
-  ): Promise<SafeJeonsePrivateState> {
-    providers.privateStateProvider.setContractAddress(contractAddress);
-    const existing = await providers.privateStateProvider.get(safeJeonsePrivateStateKey);
-    return existing ?? createSafeJeonsePrivateState(utils.randomBytes(32));
-  }
 }
+
+/**
+ * Sets up a building in two transactions: the landlord deploys the contract naming
+ * the registry office, then the registry office attests the register figures.
+ * In production these are two different parties; demo apps play both.
+ */
+export const registerBuilding = async (
+  landlordProviders: SafeJeonseProviders,
+  registrarProviders: SafeJeonseProviders,
+  registration: BuildingRegistration,
+  registrarSecretKey: Uint8Array,
+  logger?: Logger,
+): Promise<{ landlord: SafeJeonseAPI; registrar: SafeJeonseAPI }> => {
+  validateRegisterData(registration);
+  validateSafeRatio(registration.safeRatioPercent);
+  const landlord = await SafeJeonseAPI.deploy(
+    landlordProviders,
+    { registrarPublicKey: registrarPublicKey(registrarSecretKey), safeRatioPercent: registration.safeRatioPercent },
+    logger,
+  );
+  const registrar = await SafeJeonseAPI.join(
+    registrarProviders,
+    landlord.deployedContractAddress,
+    logger,
+    registrarSecretKey,
+  );
+  await registrar.attestRegister(registration);
+  return { landlord, registrar };
+};
 
 export * as utils from './utils/index.js';
 export * from './common-types.js';

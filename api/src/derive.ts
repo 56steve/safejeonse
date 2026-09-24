@@ -16,7 +16,7 @@ import { EMPTY_COMMITMENT_HEX, exposureLimit } from './lease.js';
 const toHex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
 /** Mirrors `pad(32, role)` in the contract. */
-const roleBytes = (role: 'landlord' | 'tenant'): Uint8Array => {
+const roleBytes = (role: 'landlord' | 'tenant' | 'registrar'): Uint8Array => {
   const bytes = new Uint8Array(32);
   bytes.set(new TextEncoder().encode(role));
   return bytes;
@@ -27,6 +27,9 @@ export const landlordPublicKey = (secretKey: Uint8Array): Uint8Array =>
 
 export const tenantPublicKey = (secretKey: Uint8Array): Uint8Array =>
   pureCircuits.partyKey(roleBytes('tenant'), secretKey);
+
+export const registrarPublicKey = (secretKey: Uint8Array): Uint8Array =>
+  pureCircuits.partyKey(roleBytes('registrar'), secretKey);
 
 export const deriveState = (ledger: Ledger, privateState: SafeJeonsePrivateState): SafeJeonseDerivedState => {
   const myTenantKey = toHex(tenantPublicKey(privateState.secretKey));
@@ -53,6 +56,9 @@ export const deriveState = (ledger: Ledger, privateState: SafeJeonsePrivateState
     building,
     exposureLimit: exposureLimit(building.buildingValue, building.safeRatioPercent),
     isLandlord: toHex(ledger.landlord) === toHex(landlordPublicKey(privateState.secretKey)),
+    isRegistrar: toHex(ledger.registrar) === toHex(registrarPublicKey(privateState.secretKey)),
+    attested: ledger.attested,
+    registerUpdates: ledger.attestCount,
     slots,
     declaredCount: ledger.declaredCount,
     revision: ledger.revision,

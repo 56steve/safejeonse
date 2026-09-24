@@ -98,6 +98,9 @@ export class LocalBackend implements Backend {
         await post('withdraw', { slot });
       },
       certify: async (amount) => (await post<{ safe: boolean }>('certify', { amount })).safe,
+      attestRegister: async (data) => {
+        await post('attest', { buildingValue: data.buildingValue, seniorLiens: data.seniorLiens });
+      },
       ledgerRows: async () => (await request<{ rows: LedgerRow[] }>(`${base}/ledger`)).rows,
     };
   }

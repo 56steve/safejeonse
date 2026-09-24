@@ -24,9 +24,16 @@ export struct DepositOpening {
 // Public key of the registered landlord (the only party able to certify).
 export ledger landlord: Bytes<32>;
 
+// Public key of the registry office (등기소), the only party that can set the
+// building value and senior liens. The landlord cannot change them.
+export ledger registrar: Bytes<32>;
+
 // Building value and senior liens are PUBLIC in Korea (공시가격 / 등기부등본), in 만원.
+// Both stay at zero until the registrar attests them.
 export ledger buildingValue: Uint<64>;
 export ledger seniorLiens: Uint<64>;
+export ledger attested: Boolean;
+export ledger attestCount: Counter;
 
 // Maximum (liens + deposits) / value ratio considered safe, in percent.
 export ledger safeRatioPercent: Uint<8>;
@@ -91,16 +98,22 @@ circuit tenantKey(sk: Bytes<32>): Bytes<32> {
   return partyKey(pad(32, "tenant"), sk);
 }
 
+circuit registrarKey(sk: Bytes<32>): Bytes<32> {
+  return partyKey(pad(32, "registrar"), sk);
+}
+
 // ---------------------------------------------------------------------------
-// Deployment: the landlord registers the building with its PUBLIC register data.
+// Deployment: the landlord registers the building and names its registry office.
+// The building value and liens come later, from the registrar only.
 // ---------------------------------------------------------------------------
 
-constructor(value: Uint<64>, liens: Uint<64>, ratioPercent: Uint<8>) {
-  assert(value > 0, "Building value must be positive");
+constructor(registrarPublicKey: Bytes<32>, ratioPercent: Uint<8>) {
   assert(ratioPercent > 0 && ratioPercent <= 100, "Safe ratio must be between 1 and 100 percent");
   landlord = disclose(landlordKey(localSecretKey()));
-  buildingValue = disclose(value);
-  seniorLiens = disclose(liens);
+  registrar = disclose(registrarPublicKey);
+  buildingValue = 0;
+  seniorLiens = 0;
+  attested = false;
   safeRatioPercent = disclose(ratioPercent);
   certIssued = false;
   certSafe = false;
@@ -109,6 +122,22 @@ constructor(value: Uint<64>, liens: Uint<64>, ratioPercent: Uint<8>) {
   for (const i of 0..8) {
     declarations.insert(i as Uint<8>, emptyCommitment());
   }
+}
+
+// ---------------------------------------------------------------------------
+// Registrar: attest the building value and senior liens from the official
+// register. Called again whenever the register changes (for example a new
+// mortgage), which marks every earlier certificate as out of date.
+// ---------------------------------------------------------------------------
+
+export circuit attestRegister(value: Uint<64>, liens: Uint<64>): [] {
+  assert(registrar == registrarKey(localSecretKey()), "Only the registry office can attest register data");
+  assert(value > 0, "Building value must be positive");
+  buildingValue = disclose(value);
+  seniorLiens = disclose(liens);
+  attested = true;
+  attestCount.increment(1);
+  revision.increment(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +180,7 @@ export circuit withdrawDeposit(slot: Uint<8>): [] {
 
 export circuit certify(newDeposit: Uint<64>): Boolean {
   assert(landlord == landlordKey(localSecretKey()), "Only the registered landlord can certify");
+  assert(attested, "The registry office has not attested this building yet");
   const openings = allDeposits();
   for (const i of 0..8) {
     assert(

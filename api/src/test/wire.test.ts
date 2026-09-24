@@ -3,18 +3,18 @@
 
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { describe, expect, it } from 'vitest';
-import { SafeJeonseSimulator } from '../../../contract/src/test/safejeonse-simulator.js';
 import { createSafeJeonsePrivateState } from '../../../contract/src/witnesses.js';
 import { deriveState } from '../derive.js';
 import { newOpening, resolveLeaseBook } from '../lease.js';
 import { randomBytes } from '../utils/index.js';
+import { attestedBuilding } from './building.js';
 import { WireFormatError, bigintReplacer, decodeDerivedState, ledgerRows } from '../wire.js';
 
 setNetworkId('undeployed');
 
 const buildScenario = () => {
   const landlordKey = randomBytes(32);
-  const sim = new SafeJeonseSimulator(landlordKey, { value: 50_000n, liens: 20_000n, ratioPercent: 70n });
+  const sim = attestedBuilding(landlordKey);
   const tenantKey = randomBytes(32);
   const opening = newOpening(8_000n, randomBytes);
   sim.as(createSafeJeonsePrivateState(tenantKey, opening)).declareDeposit();

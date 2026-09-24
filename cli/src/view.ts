@@ -30,6 +30,7 @@ export const verdictText = (safe: boolean): string => (safe ? green(bold('SAFE')
 export const renderBuilding = (state: SafeJeonseDerivedState): string[] => {
   const { building } = state;
   const lines = [
+    `Registry office (등기소)   ${state.attested ? `attested (${state.registerUpdates} record${state.registerUpdates === 1n ? '' : 's'})` : yellow('not attested yet')}`,
     `Building value (공시가격)   ${formatManwon(building.buildingValue)}`,
     `Senior liens (근저당)       ${formatManwon(building.seniorLiens)}`,
     `Safe ratio                  ${building.safeRatioPercent}% of value = ${formatManwon(state.exposureLimit)}`,
@@ -54,6 +55,9 @@ export const renderPrivate = (state: SafeJeonseDerivedState): string[] => {
   const lines: string[] = [];
   if (state.isLandlord) {
     lines.push(`You are the landlord. Lease codes you have issued: ${state.leaseCodesIssued}`);
+  }
+  if (state.isRegistrar) {
+    lines.push('You are the registry office for this building. Only you can change its value and liens.');
   }
   for (const deposit of state.myDeposits) {
     lines.push(`Your deposit in slot ${deposit.slot}: ${formatManwon(deposit.amount)} (only you can see this)`);

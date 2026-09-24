@@ -9,6 +9,8 @@ import {
   type SafeJeonseCircuitKeys,
   type SafeJeonseProviders,
   ledgerRows,
+  registerBuilding,
+  utils,
 } from '../../api/src/index';
 import { type Backend, type BuildingSession } from './backend';
 import { type SafeJeonsePrivateState } from '../../contract/src/witnesses';
@@ -41,6 +43,7 @@ const toSession = (api: SafeJeonseAPI): BuildingSession => ({
   declareDeposit: (code) => api.declareDeposit(code),
   withdrawDeposit: (slot) => api.withdrawDeposit(slot),
   certify: (amount) => api.certify(amount),
+  attestRegister: (data) => api.attestRegister(data),
   ledgerRows: async () => ledgerRows(await api.queryLedger()),
 });
 
@@ -56,15 +59,24 @@ export class LaceBackend implements Backend {
   #shared: Promise<SharedProviders> | undefined;
   readonly #sessions = new Map<Persona, Promise<BuildingSession>>();
   #address: ContractAddress | undefined;
+  /** Identity of the registry office persona for buildings registered from this browser. */
+  readonly #registrarSecretKey = utils.randomBytes(32);
 
   constructor(private readonly logger: Logger) {}
 
   async register(registration: BuildingRegistration): Promise<string> {
-    const api = await SafeJeonseAPI.deploy(await this.newPersonaProviders(), registration, this.logger);
+    const { landlord, registrar } = await registerBuilding(
+      await this.newPersonaProviders(),
+      await this.newPersonaProviders(),
+      registration,
+      this.#registrarSecretKey,
+      this.logger,
+    );
     this.#sessions.clear();
-    this.#sessions.set('landlord', Promise.resolve(toSession(api)));
-    this.#address = api.deployedContractAddress;
-    return api.deployedContractAddress;
+    this.#sessions.set('landlord', Promise.resolve(toSession(landlord)));
+    this.#sessions.set('registrar', Promise.resolve(toSession(registrar)));
+    this.#address = landlord.deployedContractAddress;
+    return landlord.deployedContractAddress;
   }
 
   open(address: ContractAddress): void {
@@ -85,7 +97,14 @@ export class LaceBackend implements Backend {
       return existing;
     }
     const joined = this.newPersonaProviders()
-      .then((providers) => SafeJeonseAPI.join(providers, address, this.logger))
+      .then((providers) =>
+        SafeJeonseAPI.join(
+          providers,
+          address,
+          this.logger,
+          persona === 'registrar' ? this.#registrarSecretKey : undefined,
+        ),
+      )
       .then(toSession);
     joined.catch(() => this.#sessions.delete(persona));
     this.#sessions.set(persona, joined);

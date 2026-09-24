@@ -22,9 +22,18 @@ import {
 } from "../witnesses.js";
 
 export type BuildingParams = {
-  value: bigint;
-  liens: bigint;
+  registrarPublicKey: Uint8Array;
   ratioPercent: bigint;
+};
+
+/** Mirrors `partyKey(pad(32, role), sk)` in the contract. */
+export const rolePublicKey = (
+  role: "landlord" | "tenant" | "registrar",
+  secretKey: Uint8Array,
+): Uint8Array => {
+  const roleBytes = new Uint8Array(32);
+  roleBytes.set(new TextEncoder().encode(role));
+  return pureCircuits.partyKey(roleBytes, secretKey);
 };
 
 /**
@@ -46,8 +55,7 @@ export class SafeJeonseSimulator {
         createSafeJeonsePrivateState(landlordSecretKey),
         "0".repeat(64),
       ),
-      params.value,
-      params.liens,
+      params.registrarPublicKey,
       params.ratioPercent,
     );
     this.circuitContext = {
@@ -68,6 +76,14 @@ export class SafeJeonseSimulator {
 
   public getLedger(): Ledger {
     return ledger(this.circuitContext.currentQueryContext.state);
+  }
+
+  public attestRegister(value: bigint, liens: bigint): void {
+    this.circuitContext = this.contract.impureCircuits.attestRegister(
+      this.circuitContext,
+      value,
+      liens,
+    ).context;
   }
 
   public declareDeposit(): bigint {

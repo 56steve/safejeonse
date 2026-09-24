@@ -18,6 +18,17 @@ export const Register: React.FC<{ state: SafeJeonseDerivedState; address: string
         <tbody>
           <tr>
             <th>
+              등기소 확인
+              <span className="note">Attested by the registry office</span>
+            </th>
+            <td>
+              {state.attested
+                ? `Yes, ${state.registerUpdates.toString()} ${state.registerUpdates === 1n ? 'record' : 'records'}`
+                : 'Not yet'}
+            </td>
+          </tr>
+          <tr>
+            <th>
               건물 가액
               <span className="note">Building value (공시가격)</span>
             </th>

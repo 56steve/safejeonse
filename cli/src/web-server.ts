@@ -17,7 +17,9 @@ import {
   bigintReplacer,
   isPersona,
   ledgerRows,
-  validateRegistration,
+  registerBuilding,
+  validateRegisterData,
+  validateSafeRatio,
 } from '../../api/src/index';
 import { type Session } from './index.js';
 
@@ -145,7 +147,12 @@ export class WebBackend {
     if (existing !== undefined) {
       return existing;
     }
-    const joined = SafeJeonseAPI.join(this.session.providers(persona), address, this.quietLogger());
+    const joined = SafeJeonseAPI.join(
+      this.session.providers(persona),
+      address,
+      this.quietLogger(),
+      persona === 'registrar' ? this.session.registrarSecretKey : undefined,
+    );
     joined.catch(() => this.#apis.delete(key));
     this.#apis.set(key, joined);
     return joined;
@@ -173,15 +180,24 @@ export class WebBackend {
         safeRatioPercent: amountField(body, 'safeRatioPercent'),
       };
       try {
-        validateRegistration(registration);
+        validateRegisterData(registration);
+        validateSafeRatio(registration.safeRatioPercent);
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
-      const api = await this.#queue.run(() =>
-        SafeJeonseAPI.deploy(this.session.providers('landlord'), registration, this.quietLogger()),
+      const { landlord, registrar } = await this.#queue.run(() =>
+        registerBuilding(
+          this.session.providers('landlord'),
+          this.session.providers('registrar'),
+          registration,
+          this.session.registrarSecretKey,
+          this.quietLogger(),
+        ),
       );
-      this.#apis.set(`${api.deployedContractAddress}:landlord`, Promise.resolve(api));
-      send(res, 201, { address: api.deployedContractAddress });
+      const address = landlord.deployedContractAddress;
+      this.#apis.set(`${address}:landlord`, Promise.resolve(landlord));
+      this.#apis.set(`${address}:registrar`, Promise.resolve(registrar));
+      send(res, 201, { address });
       return;
     }
 
@@ -221,6 +237,20 @@ export class WebBackend {
       case 'withdraw': {
         const slot = amountField(body, 'slot');
         await this.#queue.run(() => api.withdrawDeposit(slot));
+        send(res, 200, { ok: true });
+        return;
+      }
+      case 'attest': {
+        const data = {
+          buildingValue: amountField(body, 'buildingValue'),
+          seniorLiens: amountField(body, 'seniorLiens'),
+        };
+        try {
+          validateRegisterData(data);
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error));
+        }
+        await this.#queue.run(() => api.attestRegister(data));
         send(res, 200, { ok: true });
         return;
       }

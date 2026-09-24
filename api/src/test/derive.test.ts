@@ -3,11 +3,12 @@
 
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { SafeJeonseSimulator } from '../../../contract/src/test/safejeonse-simulator.js';
+import { type SafeJeonseSimulator } from '../../../contract/src/test/safejeonse-simulator.js';
 import { createSafeJeonsePrivateState } from '../../../contract/src/witnesses.js';
 import { deriveState } from '../derive.js';
 import { newOpening, resolveLeaseBook } from '../lease.js';
 import { randomBytes } from '../utils/index.js';
+import { attestedBuilding } from './building.js';
 
 setNetworkId('undeployed');
 
@@ -17,7 +18,19 @@ describe('deriveState', () => {
 
   beforeEach(() => {
     landlordKey = randomBytes(32);
-    sim = new SafeJeonseSimulator(landlordKey, { value: 50_000n, liens: 20_000n, ratioPercent: 70n });
+    sim = attestedBuilding(landlordKey);
+  });
+
+  it('recognises the registrar and nobody else as the registry office', () => {
+    const registrarKey = randomBytes(32);
+    const building = attestedBuilding(landlordKey, registrarKey);
+    const asRegistrar = deriveState(building.getLedger(), createSafeJeonsePrivateState(registrarKey));
+    const asLandlord = deriveState(building.getLedger(), createSafeJeonsePrivateState(landlordKey));
+    expect(asRegistrar.isRegistrar).toBe(true);
+    expect(asRegistrar.isLandlord).toBe(false);
+    expect(asLandlord.isRegistrar).toBe(false);
+    expect(asLandlord.attested).toBe(true);
+    expect(asLandlord.registerUpdates).toBe(1n);
   });
 
   it('recognises the landlord and computes the exposure limit', () => {
@@ -51,7 +64,7 @@ describe('deriveState', () => {
     expect(sim.as(createSafeJeonsePrivateState(landlordKey, null, book)).certify(5_000n)).toBe(true);
 
     const fresh = deriveState(sim.getLedger(), createSafeJeonsePrivateState(landlordKey));
-    expect(fresh.certificate).toEqual({ newDeposit: 5_000n, safe: true, stale: false, issuedAtRevision: 1n });
+    expect(fresh.certificate).toEqual({ newDeposit: 5_000n, safe: true, stale: false, issuedAtRevision: 2n });
 
     sim.as(createSafeJeonsePrivateState(randomBytes(32), newOpening(1_000n, randomBytes))).declareDeposit();
     const stale = deriveState(sim.getLedger(), createSafeJeonsePrivateState(landlordKey));

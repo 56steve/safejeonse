@@ -134,6 +134,57 @@ const CopyCode: React.FC<{ code: string }> = ({ code }) => {
   );
 };
 
+/* ----------------------------------------------------------------- registrar */
+
+export const RegistrarPanel: React.FC<PanelProps> = ({ session, state }) => {
+  const [value, setValue] = useState(state.building.buildingValue.toString());
+  const [liens, setLiens] = useState(state.building.seniorLiens.toString());
+  const [status, attest] = useAction<void>();
+  const buildingValue = parseManwon(value);
+  const seniorLiens = liens.trim() === '0' ? 0n : parseManwon(liens);
+
+  if (!state.isRegistrar) {
+    return (
+      <div className="notice">
+        This building names a different registry office, so this role can&apos;t change its register data.
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <h3>Record a register change</h3>
+      <p className="explain">
+        Only the registry office (등기소) can set the building value and the mortgage. When the register changes, for
+        example because the landlord takes out a new loan, record it here. Every earlier certificate is then marked out
+        of date.
+      </p>
+      <label className="field">
+        <span>Building value, 공시가격 (만원)</span>
+        <input inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} />
+        <em>{buildingValue === null ? 'Enter a whole number' : formatManwon(buildingValue)}</em>
+      </label>
+      <label className="field">
+        <span>Senior liens, 근저당 채권최고액 (만원)</span>
+        <input inputMode="numeric" value={liens} onChange={(e) => setLiens(e.target.value)} />
+        <em>{seniorLiens === null ? 'Enter a whole number, or 0' : formatManwon(seniorLiens)}</em>
+      </label>
+      <button
+        className="btn"
+        disabled={buildingValue === null || seniorLiens === null || status.kind === 'busy'}
+        onClick={() =>
+          buildingValue !== null &&
+          seniorLiens !== null &&
+          void attest('Recording the change on-chain', () => session.attestRegister({ buildingValue, seniorLiens }))
+        }
+      >
+        Record on-chain
+      </button>
+      <Status status={status} done="Register data updated." />
+    </div>
+  );
+};
+
 /* -------------------------------------------------------------------- tenant */
 
 export const TenantPanel: React.FC<PanelProps> = ({ session, state }) => {

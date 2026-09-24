@@ -28,7 +28,7 @@ export const Start: React.FC<{ backend: Backend; onReady: (address: string) => v
     const label =
       backend.kind === 'lace'
         ? 'Connecting to your wallet and deploying. This can take a minute.'
-        : 'Deploying the contract on the local network. This takes about 20 seconds.';
+        : 'Deploying the contract, then the registry office attests the figures. This takes about 40 seconds.';
     void register(label, async () => {
       const address = await backend.register({ buildingValue, seniorLiens, safeRatioPercent: BigInt(ratioNumber) });
       onReady(address);
@@ -43,7 +43,8 @@ export const Start: React.FC<{ backend: Backend; onReady: (address: string) => v
           건물 등록 <span>Register a building</span>
         </h2>
         <p className="explain">
-          As the landlord, enter the numbers from the public property register. Nothing private goes on-chain here.
+          Enter the numbers from the public property register. The registry office (등기소) attests them on-chain, and
+          from then on only it can change them. Nothing private goes on-chain here.
         </p>
         <label className="field">
           <span>Building value, 공시가격 (만원)</span>
