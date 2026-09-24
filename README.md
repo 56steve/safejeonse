@@ -51,8 +51,8 @@ sequenceDiagram
     participant C as Midnight contract
     participant R as Renter
 
-    L->>C: Deploy building, naming its registry office
-    G->>C: attestRegister (value + mortgage)
+    L->>C: Deploy building
+    G->>C: attestRegister (value + mortgage), only the key fixed in the contract
     L->>T: Lease code: deposit amount + random salt
     Note over T: Checks the amount against the paper lease
     T->>C: declareDeposit (ZK proof)<br/>stores only hash(amount, salt)
@@ -61,7 +61,7 @@ sequenceDiagram
     C-->>R: RISKY / SAFE, nothing else
 ```
 
-1. **The landlord registers the building, and the registry office attests it.** The landlord deploys the contract and names the registry office. Only that office can then set the building value (공시가격) and the senior liens (근저당). The landlord can't change them, and no certificate can be issued before they are attested.
+1. **The landlord registers the building, and the registry office attests it.** The official registry office's public key is compiled into the contract, so the landlord can't substitute an office of his own. Only that office can set the building value (공시가격) and the senior liens (근저당), and no certificate can be issued before they are attested.
 2. **Each tenant seals their own deposit.** The landlord gives them a lease code (the amount plus a random salt). The tenant checks the amount against their paper lease and submits it. Only a salted hash is stored on-chain, in a slot owned by the tenant's key. Since the tenant submits it, **the landlord can't leave a deposit out or make it look smaller.**
 3. **The landlord proves the verdict.** For a proposed new deposit, the landlord's machine builds a zero-knowledge proof. The proof shows that the private amounts behind **every** on-chain commitment add up, together with the mortgage and the new deposit, to at most the limit. Only the boolean result is disclosed.
 
@@ -84,12 +84,12 @@ When anything changes, older certificates are flagged as out of date automatical
 
 | Midnight feature | Where | What it does here |
 |---|---|---|
-| **Witnesses** (private inputs) | [`safejeonse.compact:65-71`](contract/src/safejeonse.compact#L65-L71) | Deposit amounts and salts are fed into circuits from local private state and never leave the device |
-| **`persistentHash` commitments** | [`depositCommitment`](contract/src/safejeonse.compact#L77) | Each deposit is stored as `hash(domain, amount, salt)` |
-| **ZK circuit over private data** | [`certify`](contract/src/safejeonse.compact#L181) | Opens all 8 commitments inside the circuit, sums the amounts and compares against the limit |
-| **Selective disclosure (`disclose`)** | [`certify`](contract/src/safejeonse.compact#L197-L200) | Only the SAFE/RISKY boolean and the offered amount are made public |
-| **Key-bound authorization** | [`attestRegister`](contract/src/safejeonse.compact#L133), [`declareDeposit`](contract/src/safejeonse.compact#L148), [`withdrawDeposit`](contract/src/safejeonse.compact#L166) | Registrar, tenant and landlord public keys are derived from secret keys with role separation, so only the registry office can set the register data, only the declaring tenant can withdraw, and only the landlord can certify |
-| **Ledger `Map` + `Counter` state** | [`safejeonse.compact:25-59`](contract/src/safejeonse.compact#L25-L59) | Slots, owners and a revision counter that marks stale certificates |
+| **Witnesses** (private inputs) | [`safejeonse.compact:70-76`](contract/src/safejeonse.compact#L70-L76) | Deposit amounts and salts are fed into circuits from local private state and never leave the device |
+| **`persistentHash` commitments** | [`depositCommitment`](contract/src/safejeonse.compact#L82) | Each deposit is stored as `hash(domain, amount, salt)` |
+| **ZK circuit over private data** | [`certify`](contract/src/safejeonse.compact#L185) | Opens all 8 commitments inside the circuit, sums the amounts and compares against the limit |
+| **Selective disclosure (`disclose`)** | [`certify`](contract/src/safejeonse.compact#L201-L204) | Only the SAFE/RISKY boolean and the offered amount are made public |
+| **Key-bound authorization** | [`officialRegistry`](contract/src/safejeonse.compact#L13), [`attestRegister`](contract/src/safejeonse.compact#L137), [`declareDeposit`](contract/src/safejeonse.compact#L152), [`withdrawDeposit`](contract/src/safejeonse.compact#L170) | Public keys are derived from secret keys with role separation. The registry office's key is a constant in the contract, only the declaring tenant can withdraw, and only the landlord can certify |
+| **Ledger `Map` + `Counter` state** | [`safejeonse.compact:34-64`](contract/src/safejeonse.compact#L34-L64) | Slots, owners and a revision counter that marks stale certificates |
 
 If a landlord feeds the circuit a forged amount, proof generation fails with `Deposit openings do not match the on-chain declarations`. If the landlord tries to set the building value, it fails with `Only the registry office can attest register data`. The demo shows both on a real chain.
 
@@ -115,7 +115,7 @@ compact update 0.31.0
 ```bash
 npm install
 npm run compact     # compiles the contract and generates the ZK circuits
-npm test            # 46 tests: contract circuits + API logic
+npm test            # 48 tests: contract circuits + API logic
 ```
 
 Expected output from `npm run compact`:
@@ -221,7 +221,7 @@ Set Lace to Midnight **Preprod** with the proof server on **Local** (`docker run
 contract/   Compact contract, witnesses and simulator tests
   src/safejeonse.compact       the contract (4 ZK circuits)
   src/witnesses.ts             private state and witness functions
-  src/test/                    20 circuit tests (fraud cases included)
+  src/test/                    22 circuit tests (fraud cases included)
 api/        shared TypeScript API used by the CLI and the web app
   src/index.ts                 deploy / join / declare / withdraw / certify
   src/lease.ts                 lease codes and slot matching
@@ -236,14 +236,14 @@ ui/         React web app (local server or Lace wallet)
 ## Limitations
 
 - **The verdict leaks a little by design.** Anyone who sees many certificates for different amounts could narrow down the total of the earlier deposits. Individual deposits still stay hidden. Under current Korean law a renter can already ask for these records in full, so revealing only the total is still less than what they could see today. Only the landlord can issue certificates, which limits how many are made.
-- **The registry office is a key, not an institution.** The contract trusts whichever registrar key the landlord names at deployment. In production that would be the registry office's published key, and apps would refuse buildings that name any other. In the demo, one machine plays the registry office.
+- **The demo registry key is public.** The registry office's key is fixed in the contract, but for the demo its secret is published in [`contract/src/registry.ts`](contract/src/registry.ts), like the genesis wallet seed of a local Midnight network, so anyone running the repo can play the office. A production build would embed the real office's public key, and only the office would hold the secret.
 - **Tenants need to take part.** A tenant who never seals their deposit isn't counted. In production, sealing should happen where leases are already registered (확정일자 at the community centre or online), so every lease is included automatically.
 - **Fixed size.** A building has up to 8 unit slots, which fits a typical 다가구. It's a constant in the contract.
 - **Lease-code salts are shared with the landlord.** The landlord already knows each deposit (they received it), so this reveals nothing new to them.
 
 ## Roadmap
 
-- Check the registrar key against the registry office's published key before showing a verdict
+- Compile with the real registry office's key, and add a way to rotate it
 - Integrate sealing with 확정일자 registration so no lease can be skipped
 - A shareable certificate link a renter can verify on their phone
 - Support larger buildings (more slots) and HUG deposit-insurance ratios

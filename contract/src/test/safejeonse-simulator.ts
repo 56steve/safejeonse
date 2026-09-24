@@ -22,7 +22,6 @@ import {
 } from "../witnesses.js";
 
 export type BuildingParams = {
-  registrarPublicKey: Uint8Array;
   ratioPercent: bigint;
 };
 
@@ -55,7 +54,6 @@ export class SafeJeonseSimulator {
         createSafeJeonsePrivateState(landlordSecretKey),
         "0".repeat(64),
       ),
-      params.registrarPublicKey,
       params.ratioPercent,
     );
     this.circuitContext = {

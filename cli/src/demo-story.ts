@@ -12,13 +12,7 @@
  *   Choi is offered a unit for a 7,000만 jeonse deposit and wants to know if it is safe.
  */
 
-import {
-  SafeJeonseAPI,
-  decodeLeaseCode,
-  formatManwon,
-  registrarPublicKey,
-  resolveLeaseBook,
-} from '../../api/src/index';
+import { SafeJeonseAPI, decodeLeaseCode, formatManwon, resolveLeaseBook } from '../../api/src/index';
 import { type Session } from './index.js';
 import {
   bold,
@@ -61,17 +55,11 @@ export const demoStory = async (session: Session): Promise<void> => {
   const as = (persona: string, address: string) => SafeJeonseAPI.join(session.providers(persona), address, quiet);
 
   heading('1. Kim registers the building, the registry office attests it');
-  say('  Kim deploys the contract but cannot set its numbers. Only the registry office can:');
+  say('  Kim deploys the contract but cannot set its numbers. Only the official registry office can,');
+  say('  and its key is fixed inside the contract, so Kim cannot name an office of his own:');
   say(`  value ${formatManwon(BUILDING.buildingValue)}, mortgage ${formatManwon(BUILDING.seniorLiens)}.`);
   const kim = await step('Kim deploys the SafeJeonse contract', () =>
-    SafeJeonseAPI.deploy(
-      session.providers('landlord'),
-      {
-        registrarPublicKey: registrarPublicKey(session.registrarSecretKey),
-        safeRatioPercent: BUILDING.safeRatioPercent,
-      },
-      quiet,
-    ),
+    SafeJeonseAPI.deploy(session.providers('landlord'), { safeRatioPercent: BUILDING.safeRatioPercent }, quiet),
   );
   const address = kim.deployedContractAddress;
   const registry = await SafeJeonseAPI.join(session.providers('registrar'), address, quiet, session.registrarSecretKey);

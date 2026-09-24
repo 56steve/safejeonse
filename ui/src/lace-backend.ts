@@ -10,8 +10,8 @@ import {
   type SafeJeonseProviders,
   ledgerRows,
   registerBuilding,
-  utils,
 } from '../../api/src/index';
+import { demoRegistrySecretKey } from '../../contract/src/registry';
 import { type Backend, type BuildingSession } from './backend';
 import { type SafeJeonsePrivateState } from '../../contract/src/witnesses';
 import { type ContractAddress, fromHex, toHex } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
@@ -59,8 +59,8 @@ export class LaceBackend implements Backend {
   #shared: Promise<SharedProviders> | undefined;
   readonly #sessions = new Map<Persona, Promise<BuildingSession>>();
   #address: ContractAddress | undefined;
-  /** Identity of the registry office persona for buildings registered from this browser. */
-  readonly #registrarSecretKey = utils.randomBytes(32);
+  /** The demo registry office key; only the key embedded in the contract is accepted. */
+  readonly #registrarSecretKey = demoRegistrySecretKey();
 
   constructor(private readonly logger: Logger) {}
 

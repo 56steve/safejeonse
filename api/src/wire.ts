@@ -36,7 +36,6 @@ export const ledgerRows = (ledger: Ledger): LedgerRow[] => {
   const slots = Array.from(ledger.declarations).sort(([a], [b]) => (a < b ? -1 : 1));
   return [
     { label: 'landlord', value: shortHex(ledger.landlord) },
-    { label: 'registrar', value: shortHex(ledger.registrar) },
     { label: 'attested', value: String(ledger.attested) },
     { label: 'attestCount', value: ledger.attestCount.toString() },
     { label: 'buildingValue', value: ledger.buildingValue.toString() },

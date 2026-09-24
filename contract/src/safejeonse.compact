@@ -6,6 +6,15 @@ pragma language_version 0.23;
 
 import CompactStandardLibrary;
 
+// Public key of the official registry office (등기소), fixed when the contract is
+// compiled. Only this key can set a building's value and senior liens, and no
+// landlord can swap in a key of their own. This is the demo office's key; a
+// production build embeds the real office's published key.
+export pure circuit officialRegistry(): Bytes<32> {
+  return Bytes[141, 173, 254, 214, 45, 52, 132, 75, 136, 246, 18, 215, 97, 3, 79, 53,
+               143, 44, 69, 125, 113, 65, 47, 70, 125, 237, 165, 39, 81, 2, 254, 167];
+}
+
 // Maximum number of rental units tracked per building (다가구 주택).
 export pure circuit maxUnits(): Uint<8> {
   return 8;
@@ -23,10 +32,6 @@ export struct DepositOpening {
 
 // Public key of the registered landlord (the only party able to certify).
 export ledger landlord: Bytes<32>;
-
-// Public key of the registry office (등기소), the only party that can set the
-// building value and senior liens. The landlord cannot change them.
-export ledger registrar: Bytes<32>;
 
 // Building value and senior liens are PUBLIC in Korea (공시가격 / 등기부등본), in 만원.
 // Both stay at zero until the registrar attests them.
@@ -103,14 +108,13 @@ circuit registrarKey(sk: Bytes<32>): Bytes<32> {
 }
 
 // ---------------------------------------------------------------------------
-// Deployment: the landlord registers the building and names its registry office.
-// The building value and liens come later, from the registrar only.
+// Deployment: the landlord registers the building. The building value and
+// liens come later, from the official registry office only.
 // ---------------------------------------------------------------------------
 
-constructor(registrarPublicKey: Bytes<32>, ratioPercent: Uint<8>) {
+constructor(ratioPercent: Uint<8>) {
   assert(ratioPercent > 0 && ratioPercent <= 100, "Safe ratio must be between 1 and 100 percent");
   landlord = disclose(landlordKey(localSecretKey()));
-  registrar = disclose(registrarPublicKey);
   buildingValue = 0;
   seniorLiens = 0;
   attested = false;
@@ -131,7 +135,7 @@ constructor(registrarPublicKey: Bytes<32>, ratioPercent: Uint<8>) {
 // ---------------------------------------------------------------------------
 
 export circuit attestRegister(value: Uint<64>, liens: Uint<64>): [] {
-  assert(registrar == registrarKey(localSecretKey()), "Only the registry office can attest register data");
+  assert(officialRegistry() == registrarKey(localSecretKey()), "Only the registry office can attest register data");
   assert(value > 0, "Building value must be positive");
   buildingValue = disclose(value);
   seniorLiens = disclose(liens);

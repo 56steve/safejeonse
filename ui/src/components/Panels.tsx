@@ -145,9 +145,7 @@ export const RegistrarPanel: React.FC<PanelProps> = ({ session, state }) => {
 
   if (!state.isRegistrar) {
     return (
-      <div className="notice">
-        This building names a different registry office, so this role can&apos;t change its register data.
-      </div>
+      <div className="notice">Only the official registry office can change this building&apos;s register data.</div>
     );
   }
 

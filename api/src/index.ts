@@ -32,7 +32,7 @@ import {
   MAX_UNITS,
 } from '../../contract/src/witnesses.js';
 import { assertValidAmount, decodeLeaseCode, encodeLeaseCode, newOpening, resolveLeaseBook } from './lease.js';
-import { deriveState, registrarPublicKey } from './derive.js';
+import { deriveState } from './derive.js';
 
 export interface DeployedSafeJeonseAPI {
   readonly deployedContractAddress: ContractAddress;
@@ -57,9 +57,8 @@ export const validateSafeRatio = (safeRatioPercent: bigint): void => {
   }
 };
 
-/** What the landlord decides at deployment: which registry office to trust, and the safe ratio. */
+/** What the landlord decides at deployment. The registry office is fixed in the contract. */
 export type DeployParams = {
-  readonly registrarPublicKey: Uint8Array;
   readonly safeRatioPercent: bigint;
 };
 
@@ -204,12 +203,9 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
     });
   }
 
-  /** Landlord: register a building by deploying a new contract that names its registry office. */
+  /** Landlord: register a building by deploying a new contract. */
   static async deploy(providers: SafeJeonseProviders, params: DeployParams, logger?: Logger): Promise<SafeJeonseAPI> {
     validateSafeRatio(params.safeRatioPercent);
-    if (params.registrarPublicKey.length !== 32) {
-      throw new RangeError('Registrar public key must be 32 bytes');
-    }
     logger?.info({ deployContract: { safeRatioPercent: params.safeRatioPercent.toString() } });
 
     const initialPrivateState = createSafeJeonsePrivateState(utils.randomBytes(32));
@@ -217,7 +213,7 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
       compiledContract: CompiledSafeJeonseContract,
       privateStateId: safeJeonsePrivateStateKey,
       initialPrivateState,
-      args: [params.registrarPublicKey, params.safeRatioPercent],
+      args: [params.safeRatioPercent],
     });
 
     logger?.info({ contractDeployed: { address: deployed.deployTxData.public.contractAddress } });
@@ -251,9 +247,12 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
 }
 
 /**
- * Sets up a building in two transactions: the landlord deploys the contract naming
- * the registry office, then the registry office attests the register figures.
- * In production these are two different parties; demo apps play both.
+ * Sets up a building in two transactions: the landlord deploys the contract, then
+ * the official registry office attests the register figures. In production these
+ * are two different parties; the demo apps play both.
+ *
+ * @param registrarSecretKey The registry office's key. Only the key embedded in
+ * the contract (`officialRegistry()`) is accepted.
  */
 export const registerBuilding = async (
   landlordProviders: SafeJeonseProviders,
@@ -266,7 +265,7 @@ export const registerBuilding = async (
   validateSafeRatio(registration.safeRatioPercent);
   const landlord = await SafeJeonseAPI.deploy(
     landlordProviders,
-    { registrarPublicKey: registrarPublicKey(registrarSecretKey), safeRatioPercent: registration.safeRatioPercent },
+    { safeRatioPercent: registration.safeRatioPercent },
     logger,
   );
   const registrar = await SafeJeonseAPI.join(

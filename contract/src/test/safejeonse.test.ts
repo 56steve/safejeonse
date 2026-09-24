@@ -10,6 +10,7 @@ import {
   MAX_UNITS,
   createSafeJeonsePrivateState,
 } from "../witnesses.js";
+import { demoRegistrySecretKey } from "../registry.js";
 import { SafeJeonseSimulator, rolePublicKey } from "./safejeonse-simulator.js";
 import { randomBytes } from "./utils.js";
 
@@ -45,13 +46,12 @@ describe("SafeJeonse contract", () => {
 
   const deploy = (): SafeJeonseSimulator =>
     new SafeJeonseSimulator(landlordKey, {
-      registrarPublicKey: rolePublicKey("registrar", registrarKey),
       ratioPercent: BUILDING.ratioPercent,
     });
 
   beforeEach(() => {
     landlordKey = randomBytes(32);
-    registrarKey = randomBytes(32);
+    registrarKey = demoRegistrySecretKey();
     sim = deploy();
     sim.as(registrar()).attestRegister(BUILDING.value, BUILDING.liens);
   });
@@ -61,7 +61,6 @@ describe("SafeJeonse contract", () => {
       const fresh = deploy().getLedger();
       expect(fresh.attested).toBe(false);
       expect(fresh.buildingValue).toBe(0n);
-      expect(fresh.registrar).toEqual(rolePublicKey("registrar", registrarKey));
     });
 
     it("publishes only the public register data", () => {
@@ -88,7 +87,6 @@ describe("SafeJeonse contract", () => {
       expect(
         () =>
           new SafeJeonseSimulator(randomBytes(32), {
-            registrarPublicKey: rolePublicKey("registrar", registrarKey),
             ratioPercent: 101n,
           }),
       ).toThrow(/Safe ratio/);
@@ -96,6 +94,24 @@ describe("SafeJeonse contract", () => {
   });
 
   describe("registry office attestation", () => {
+    it("embeds the official registry key in the contract", () => {
+      expect(pureCircuits.officialRegistry()).toEqual(
+        rolePublicKey("registrar", demoRegistrySecretKey()),
+      );
+    });
+
+    it("rejects any registrar key other than the official one", () => {
+      // A landlord who invents their own "registry office" gets nowhere.
+      const fakeOffice = createSafeJeonsePrivateState(randomBytes(32));
+      expect(() => sim.as(fakeOffice).attestRegister(90_000n, 0n)).toThrow(
+        /Only the registry office/,
+      );
+      const landlordAsOffice = createSafeJeonsePrivateState(landlordKey);
+      expect(() =>
+        sim.as(landlordAsOffice).attestRegister(90_000n, 0n),
+      ).toThrow(/Only the registry office/);
+    });
+
     it("rejects register data from anyone but the registrar", () => {
       expect(() => sim.as(landlord([])).attestRegister(90_000n, 0n)).toThrow(
         /Only the registry office/,

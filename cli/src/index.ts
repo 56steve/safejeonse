@@ -37,6 +37,7 @@ import { unshieldedToken } from '@midnight-ntwrk/midnight-js-protocol/ledger';
 import { syncWallet, waitForUnshieldedFunds } from './wallet-utils';
 import { generateDust } from './generate-dust';
 import { type SafeJeonsePrivateState } from '../../contract/src/witnesses.js';
+import { demoRegistrySecretKey } from '../../contract/src/registry.js';
 import { bold, dim, heading, printBlock, red, renderBuilding, renderPrivate, renderRawLedger, say } from './view.js';
 
 // @ts-expect-error: It's needed to enable WebSocket usage through apollo
@@ -331,7 +332,7 @@ export const run = async (config: Config, testEnv: TestEnvironment, logger: Logg
     const session: Session = {
       providers: makeProviderFactory(config, env, walletProvider, seed),
       logger,
-      registrarSecretKey: randomBytes(32),
+      registrarSecretKey: demoRegistrySecretKey(),
     };
     if (mode.kind === 'interactive') {
       await mainLoop(session, rli);

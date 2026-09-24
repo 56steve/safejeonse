@@ -56,7 +56,7 @@ export const deriveState = (ledger: Ledger, privateState: SafeJeonsePrivateState
     building,
     exposureLimit: exposureLimit(building.buildingValue, building.safeRatioPercent),
     isLandlord: toHex(ledger.landlord) === toHex(landlordPublicKey(privateState.secretKey)),
-    isRegistrar: toHex(ledger.registrar) === toHex(registrarPublicKey(privateState.secretKey)),
+    isRegistrar: toHex(pureCircuits.officialRegistry()) === toHex(registrarPublicKey(privateState.secretKey)),
     attested: ledger.attested,
     registerUpdates: ledger.attestCount,
     slots,

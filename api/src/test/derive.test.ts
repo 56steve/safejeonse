@@ -4,6 +4,7 @@
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type SafeJeonseSimulator } from '../../../contract/src/test/safejeonse-simulator.js';
+import { demoRegistrySecretKey } from '../../../contract/src/registry.js';
 import { createSafeJeonsePrivateState } from '../../../contract/src/witnesses.js';
 import { deriveState } from '../derive.js';
 import { newOpening, resolveLeaseBook } from '../lease.js';
@@ -21,10 +22,9 @@ describe('deriveState', () => {
     sim = attestedBuilding(landlordKey);
   });
 
-  it('recognises the registrar and nobody else as the registry office', () => {
-    const registrarKey = randomBytes(32);
-    const building = attestedBuilding(landlordKey, registrarKey);
-    const asRegistrar = deriveState(building.getLedger(), createSafeJeonsePrivateState(registrarKey));
+  it('recognises the official registry office and nobody else', () => {
+    const building = attestedBuilding(landlordKey);
+    const asRegistrar = deriveState(building.getLedger(), createSafeJeonsePrivateState(demoRegistrySecretKey()));
     const asLandlord = deriveState(building.getLedger(), createSafeJeonsePrivateState(landlordKey));
     expect(asRegistrar.isRegistrar).toBe(true);
     expect(asRegistrar.isLandlord).toBe(false);
