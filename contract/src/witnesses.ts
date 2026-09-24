@@ -25,6 +25,12 @@ export const EMPTY_OPENING: DepositOpening = Object.freeze({
   salt: new Uint8Array(32),
 });
 
+/** A deposit this user declared as a tenant, remembered so they can withdraw it later. */
+export type TenantDeclaration = {
+  readonly slot: bigint;
+  readonly opening: DepositOpening;
+};
+
 export type SafeJeonsePrivateState = {
   /** Secret key from which this user's landlord / tenant public keys are derived. */
   readonly secretKey: Uint8Array;
@@ -35,12 +41,18 @@ export type SafeJeonsePrivateState = {
    * Missing entries are treated as empty slots.
    */
   readonly leaseBook: ReadonlyArray<DepositOpening | null>;
+  /** Landlord role: every lease code handed to a tenant (slot unknown until declared). */
+  readonly issuedLeases: ReadonlyArray<DepositOpening>;
+  /** Tenant role: deposits this user has declared. */
+  readonly myDeclarations: ReadonlyArray<TenantDeclaration>;
 };
 
 export const createSafeJeonsePrivateState = (
   secretKey: Uint8Array,
   ownDeposit: DepositOpening | null = null,
   leaseBook: ReadonlyArray<DepositOpening | null> = [],
+  issuedLeases: ReadonlyArray<DepositOpening> = [],
+  myDeclarations: ReadonlyArray<TenantDeclaration> = [],
 ): SafeJeonsePrivateState => {
   if (secretKey.length !== 32) {
     throw new RangeError(
@@ -52,7 +64,7 @@ export const createSafeJeonsePrivateState = (
       `Lease book holds ${leaseBook.length} entries but a building has at most ${MAX_UNITS} slots`,
     );
   }
-  return { secretKey, ownDeposit, leaseBook };
+  return { secretKey, ownDeposit, leaseBook, issuedLeases, myDeclarations };
 };
 
 /** Expands a (possibly sparse) lease book into exactly MAX_UNITS openings. */

@@ -1,249 +1,216 @@
-// This file is part of midnightntwrk/example-bboard.
-// Copyright (C) Midnight Foundation
+// SafeJeonse (안심전세 ZK)
 // SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 /**
- * Provides types and utilities for working with bulletin board contracts.
+ * API for deploying, joining and using a SafeJeonse building contract.
+ * Shared by the CLI and the browser UI.
  *
  * @packageDocumentation
  */
 
-import * as BBoard from '../../contract/src/managed/bboard/contract/index.js';
+import * as SafeJeonse from '../../contract/src/managed/safejeonse/contract/index.js';
 
-import { type ContractAddress, convertFieldToBytes } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
+import { type ContractAddress } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
 import { type Logger } from 'pino';
 import {
-  type BBoardDerivedState,
-  type BBoardContract,
-  type BBoardProviders,
-  type DeployedBBoardContract,
-  bboardPrivateStateKey,
+  type BuildingRegistration,
+  type DeployedSafeJeonseContract,
+  type SafeJeonseContract,
+  type SafeJeonseDerivedState,
+  type SafeJeonseProviders,
+  safeJeonsePrivateStateKey,
 } from './common-types.js';
-import { CompiledBBoardContractContract } from '../../contract/src/index';
+import { CompiledSafeJeonseContract } from '../../contract/src/index';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { combineLatest, map, tap, from, type Observable } from 'rxjs';
-import { toHex } from '@midnight-ntwrk/midnight-js-utils';
-import { BBoardPrivateState, createBBoardPrivateState } from '../../contract/src/witnesses.js';
+import { BehaviorSubject, combineLatest, map, type Observable } from 'rxjs';
+import { type SafeJeonsePrivateState, createSafeJeonsePrivateState, MAX_UNITS } from '../../contract/src/witnesses.js';
+import { assertValidAmount, decodeLeaseCode, encodeLeaseCode, newOpening, resolveLeaseBook } from './lease.js';
+import { deriveState } from './derive.js';
 
-/** @internal */
-
-/**
- * An API for a deployed bulletin board.
- */
-export interface DeployedBBoardAPI {
+export interface DeployedSafeJeonseAPI {
   readonly deployedContractAddress: ContractAddress;
-  readonly state$: Observable<BBoardDerivedState>;
+  readonly state$: Observable<SafeJeonseDerivedState>;
 
-  post: (message: string) => Promise<void>;
-  takeDown: () => Promise<void>;
+  createLeaseCode: (amount: bigint) => Promise<string>;
+  declareDeposit: (leaseCode: string) => Promise<bigint>;
+  withdrawDeposit: (slot: bigint) => Promise<void>;
+  certify: (newDeposit: bigint) => Promise<boolean>;
 }
 
+export const validateRegistration = (registration: BuildingRegistration): void => {
+  assertValidAmount(registration.buildingValue);
+  if (registration.seniorLiens < 0n) {
+    throw new RangeError('Senior liens cannot be negative');
+  }
+  if (registration.safeRatioPercent < 1n || registration.safeRatioPercent > 100n) {
+    throw new RangeError('Safe ratio must be between 1 and 100 percent');
+  }
+};
+
 /**
- * Provides an implementation of {@link DeployedBBoardAPI} by adapting a deployed bulletin board
- * contract.
+ * One building's SafeJeonse contract, seen from the current user.
  *
- * @remarks
- * The `BBoardPrivateState` is managed at the DApp level by a private state provider. As such, this
- * private state is shared between all instances of {@link BBoardAPI}, and their underlying deployed
- * contracts. The private state defines a `'secretKey'` property that effectively identifies the current
- * user, and is used to determine if the current user is the owner of the message as the observable
- * contract state changes.
- *
- * In the future, Midnight.js will provide a private state provider that supports private state storage
- * keyed by contract address. This will remove the current workaround of sharing private state across
- * the deployed bulletin board contracts, and allows for a unique secret key to be generated for each bulletin
- * board that the user interacts with.
+ * The same secret key can act as landlord (if it deployed the building) and as
+ * a tenant; the contract derives separate public keys for each role.
  */
-// TODO: Update BBoardAPI to use contract level private state storage.
-export class BBoardAPI implements DeployedBBoardAPI {
-  /** @internal */
+export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
+  readonly deployedContractAddress: ContractAddress;
+  readonly state$: Observable<SafeJeonseDerivedState>;
+
+  private readonly privateState$: BehaviorSubject<SafeJeonsePrivateState>;
+
   private constructor(
-    public readonly deployedContract: DeployedBBoardContract,
-    providers: BBoardProviders,
+    private readonly deployedContract: DeployedSafeJeonseContract,
+    private readonly providers: SafeJeonseProviders,
+    initialPrivateState: SafeJeonsePrivateState,
     private readonly logger?: Logger,
   ) {
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
     providers.privateStateProvider.setContractAddress(this.deployedContractAddress);
-    this.state$ = combineLatest(
-      [
-        // Combine public (ledger) state with...
-        providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' }).pipe(
-          map((contractState) => BBoard.ledger(contractState.data)),
-          tap((ledgerState) =>
-            logger?.trace({
-              ledgerStateChanged: {
-                ledgerState: {
-                  ...ledgerState,
-                  state: ledgerState.state === BBoard.State.OCCUPIED ? 'occupied' : 'vacant',
-                  owner: toHex(ledgerState.owner),
-                },
-              },
-            }),
-          ),
-        ),
-        // ...private state...
-        //    since the private state of the bulletin board application never changes, we can query the
-        //    private state once and always use the same value with `combineLatest`. In applications
-        //    where the private state is expected to change, we would need to make this an `Observable`.
-        from(providers.privateStateProvider.get(bboardPrivateStateKey) as Promise<BBoardPrivateState>),
-      ],
-      // ...and combine them to produce the required derived state.
-      (ledgerState, privateState) => {
-        const hashedSecretKey = BBoard.pureCircuits.publicKey(
-          privateState.secretKey,
-          convertFieldToBytes(32, ledgerState.sequence, 'api/src/index.ts'),
-        );
+    this.privateState$ = new BehaviorSubject(initialPrivateState);
 
-        return {
-          state: ledgerState.state,
-          message: ledgerState.message.value,
-          sequence: ledgerState.sequence,
-          isOwner: toHex(ledgerState.owner) === toHex(hashedSecretKey),
-        };
-      },
-    );
+    const ledger$ = providers.publicDataProvider
+      .contractStateObservable(this.deployedContractAddress, { type: 'latest' })
+      .pipe(map((contractState) => SafeJeonse.ledger(contractState.data)));
+
+    this.state$ = combineLatest([ledger$, this.privateState$], deriveState);
   }
 
   /**
-   * Gets the address of the current deployed contract.
+   * Landlord: create a lease code for a new tenant. The code carries the deposit
+   * amount and a random salt; the tenant uses it to declare the deposit on-chain.
    */
-  readonly deployedContractAddress: ContractAddress;
-
-  /**
-   * Gets an observable stream of state changes based on the current public (ledger),
-   * and private state data.
-   */
-  readonly state$: Observable<BBoardDerivedState>;
-
-  /**
-   * Attempts to post a given message to the bulletin board.
-   *
-   * @param message The message to post.
-   *
-   * @remarks
-   * This method can fail during local circuit execution if the bulletin board is currently occupied.
-   */
-  async post(message: string): Promise<void> {
-    this.logger?.info(`postingMessage: ${message}`);
-
-    const txData = await this.deployedContract.callTx.post(message);
-
-    this.logger?.trace({
-      transactionAdded: {
-        circuit: 'post',
-        txHash: txData.public.txHash,
-        blockHeight: txData.public.blockHeight,
-      },
-    });
+  async createLeaseCode(amount: bigint): Promise<string> {
+    const opening = newOpening(amount, utils.randomBytes);
+    await this.updatePrivateState((ps) => ({ ...ps, issuedLeases: [...ps.issuedLeases, opening] }));
+    this.logger?.info({ leaseCodeCreated: { amount: amount.toString() } });
+    return encodeLeaseCode(opening);
   }
 
   /**
-   * Attempts to take down any currently posted message on the bulletin board.
-   *
-   * @remarks
-   * This method can fail during local circuit execution if the bulletin board is currently vacant,
-   * or if the currently posted message isn't owned by the owner computed from the current private
-   * state.
+   * Tenant: declare the deposit from a lease code as a hidden commitment.
+   * Returns the slot the deposit was placed in.
    */
-  async takeDown(): Promise<void> {
-    this.logger?.info('takingDownMessage');
+  async declareDeposit(leaseCode: string): Promise<bigint> {
+    const opening = decodeLeaseCode(leaseCode);
+    await this.updatePrivateState((ps) => ({ ...ps, ownDeposit: opening }));
 
-    const txData = await this.deployedContract.callTx.takeDown();
+    try {
+      const txData = await this.deployedContract.callTx.declareDeposit();
+      const slot = txData.private.result;
+      this.logTx('declareDeposit', txData.public);
+      await this.updatePrivateState((ps) => ({
+        ...ps,
+        ownDeposit: null,
+        myDeclarations: [...ps.myDeclarations.filter((d) => d.slot !== slot), { slot, opening }],
+      }));
+      return slot;
+    } catch (error) {
+      await this.updatePrivateState((ps) => ({ ...ps, ownDeposit: null }));
+      throw error;
+    }
+  }
 
-    this.logger?.trace({
-      transactionAdded: {
-        circuit: 'takeDown',
-        txHash: txData.public.txHash,
-        blockHeight: txData.public.blockHeight,
-      },
-    });
+  /** Tenant: remove my declaration after my deposit has been returned. */
+  async withdrawDeposit(slot: bigint): Promise<void> {
+    if (slot < 0n || slot >= BigInt(MAX_UNITS)) {
+      throw new RangeError(`Slot must be between 0 and ${MAX_UNITS - 1}`);
+    }
+    const txData = await this.deployedContract.callTx.withdrawDeposit(slot);
+    this.logTx('withdrawDeposit', txData.public);
+    await this.updatePrivateState((ps) => ({
+      ...ps,
+      myDeclarations: ps.myDeclarations.filter((d) => d.slot !== slot),
+    }));
   }
 
   /**
-   * Deploys a new bulletin board contract to the network.
-   *
-   * @param providers The bulletin board providers.
-   * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the newly deployed
-   * {@link DeployedBBoardContract}; or rejects with a deployment error.
+   * Landlord: prove whether a new deposit would be safe. Only the verdict is
+   * published; the proof shows it was computed from every declared deposit.
    */
-  static async deploy(providers: BBoardProviders, logger?: Logger): Promise<BBoardAPI> {
-    logger?.info('deployContract');
+  async certify(newDeposit: bigint): Promise<boolean> {
+    assertValidAmount(newDeposit);
+    const contractState = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
+    if (contractState === null) {
+      throw new Error(`No contract found at ${this.deployedContractAddress}`);
+    }
+    const ledger = SafeJeonse.ledger(contractState.data);
+    const leaseBook = resolveLeaseBook(ledger.declarations, this.privateState$.value.issuedLeases);
+    await this.updatePrivateState((ps) => ({ ...ps, leaseBook }));
 
-    const deployedBBoardContract = await deployContract(providers, {
-      compiledContract: CompiledBBoardContractContract,
-      privateStateId: bboardPrivateStateKey,
-      initialPrivateState: createBBoardPrivateState(utils.randomBytes(32)),
-    });
-
-    logger?.trace({
-      contractDeployed: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
-      },
-    });
-
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    const txData = await this.deployedContract.callTx.certify(newDeposit);
+    this.logTx('certify', txData.public);
+    return txData.private.result;
   }
 
-  /**
-   * Finds an already deployed bulletin board contract on the network, and joins it.
-   *
-   * @param providers The bulletin board providers.
-   * @param contractAddress The contract address of the deployed bulletin board contract to search for and join.
-   * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the joined
-   * {@link DeployedBBoardContract}; or rejects with an error.
-   */
-  static async join(providers: BBoardProviders, contractAddress: ContractAddress, logger?: Logger): Promise<BBoardAPI> {
+  private async updatePrivateState(update: (current: SafeJeonsePrivateState) => SafeJeonsePrivateState): Promise<void> {
+    const next = update(this.privateState$.value);
+    await this.providers.privateStateProvider.set(safeJeonsePrivateStateKey, next);
+    this.privateState$.next(next);
+  }
+
+  private logTx(circuit: string, publicData: { txHash: string; blockHeight: number }): void {
+    this.logger?.info({
+      transactionAdded: { circuit, txHash: publicData.txHash, blockHeight: publicData.blockHeight },
+    });
+  }
+
+  /** Landlord: register a building by deploying a new contract. */
+  static async deploy(
+    providers: SafeJeonseProviders,
+    registration: BuildingRegistration,
+    logger?: Logger,
+  ): Promise<SafeJeonseAPI> {
+    validateRegistration(registration);
     logger?.info({
-      joinContract: {
-        contractAddress,
+      deployContract: {
+        buildingValue: registration.buildingValue.toString(),
+        seniorLiens: registration.seniorLiens.toString(),
+        safeRatioPercent: registration.safeRatioPercent.toString(),
       },
     });
 
-    const deployedBBoardContract = await findDeployedContract<BBoardContract>(providers, {
+    const initialPrivateState = createSafeJeonsePrivateState(utils.randomBytes(32));
+    const deployed = await deployContract(providers, {
+      compiledContract: CompiledSafeJeonseContract,
+      privateStateId: safeJeonsePrivateStateKey,
+      initialPrivateState,
+      args: [registration.buildingValue, registration.seniorLiens, registration.safeRatioPercent],
+    });
+
+    logger?.info({ contractDeployed: { address: deployed.deployTxData.public.contractAddress } });
+    return new SafeJeonseAPI(deployed, providers, initialPrivateState, logger);
+  }
+
+  /** Join an existing building, as a tenant, a prospective tenant, or its landlord. */
+  static async join(
+    providers: SafeJeonseProviders,
+    contractAddress: ContractAddress,
+    logger?: Logger,
+  ): Promise<SafeJeonseAPI> {
+    logger?.info({ joinContract: { contractAddress } });
+    const initialPrivateState = await SafeJeonseAPI.getPrivateState(providers, contractAddress);
+    const found = await findDeployedContract<SafeJeonseContract>(providers, {
       contractAddress,
-      compiledContract: CompiledBBoardContractContract,
-      privateStateId: bboardPrivateStateKey,
-      initialPrivateState: await BBoardAPI.getPrivateState(providers, contractAddress),
+      compiledContract: CompiledSafeJeonseContract,
+      privateStateId: safeJeonsePrivateStateKey,
+      initialPrivateState,
     });
-
-    logger?.trace({
-      contractJoined: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
-      },
-    });
-
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    return new SafeJeonseAPI(found, providers, initialPrivateState, logger);
   }
 
   private static async getPrivateState(
-    providers: BBoardProviders,
+    providers: SafeJeonseProviders,
     contractAddress: ContractAddress,
-  ): Promise<BBoardPrivateState> {
+  ): Promise<SafeJeonsePrivateState> {
     providers.privateStateProvider.setContractAddress(contractAddress);
-    const existingPrivateState = await providers.privateStateProvider.get(bboardPrivateStateKey);
-    return existingPrivateState ?? createBBoardPrivateState(utils.randomBytes(32));
+    const existing = await providers.privateStateProvider.get(safeJeonsePrivateStateKey);
+    return existing ?? createSafeJeonsePrivateState(utils.randomBytes(32));
   }
 }
 
-/**
- * A namespace that represents the exports from the `'utils'` sub-package.
- *
- * @public
- */
 export * as utils from './utils/index.js';
-
 export * from './common-types.js';
+export * from './lease.js';
+export * from './derive.js';
