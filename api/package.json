@@ -1,8 +1,8 @@
 {
-  "name": "@midnight-ntwrk/bboard-api",
+  "name": "@safejeonse/api",
   "version": "0.1.0",
-  "author": "IOG",
-  "license": "MIT",
+  "author": "Steve",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "module": "./dist/index.js",
@@ -10,8 +10,9 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "rm -rf dist && tsc --project tsconfig.build.json",
-    "ci": "npm run typecheck && npm run lint && npm run build",
+    "ci": "npm run typecheck && npm run lint && npm run test && npm run build",
     "lint": "eslint src",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   }
 }

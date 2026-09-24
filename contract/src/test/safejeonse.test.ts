@@ -10,7 +10,8 @@ import {
   MAX_UNITS,
   createSafeJeonsePrivateState,
 } from "../witnesses.js";
-import { SafeJeonseSimulator } from "./safejeonse-simulator.js";
+import { demoRegistrySecretKey } from "../registry.js";
+import { SafeJeonseSimulator, rolePublicKey } from "./safejeonse-simulator.js";
 import { randomBytes } from "./utils.js";
 
 setNetworkId("undeployed");
@@ -29,7 +30,11 @@ const bytesToHex = (bytes: Uint8Array): string =>
 
 describe("SafeJeonse contract", () => {
   let landlordKey: Uint8Array;
+  let registrarKey: Uint8Array;
   let sim: SafeJeonseSimulator;
+
+  const registrar = (): SafeJeonsePrivateState =>
+    createSafeJeonsePrivateState(registrarKey);
 
   const tenant = (deposit: DepositOpening): SafeJeonsePrivateState =>
     createSafeJeonsePrivateState(randomBytes(32), deposit);
@@ -39,14 +44,28 @@ describe("SafeJeonse contract", () => {
   ): SafeJeonsePrivateState =>
     createSafeJeonsePrivateState(landlordKey, null, leaseBook);
 
+  const deploy = (): SafeJeonseSimulator =>
+    new SafeJeonseSimulator(landlordKey, {
+      ratioPercent: BUILDING.ratioPercent,
+    });
+
   beforeEach(() => {
     landlordKey = randomBytes(32);
-    sim = new SafeJeonseSimulator(landlordKey, BUILDING);
+    registrarKey = demoRegistrySecretKey();
+    sim = deploy();
+    sim.as(registrar()).attestRegister(BUILDING.value, BUILDING.liens);
   });
 
   describe("deployment", () => {
+    it("starts with no register data until the registrar attests it", () => {
+      const fresh = deploy().getLedger();
+      expect(fresh.attested).toBe(false);
+      expect(fresh.buildingValue).toBe(0n);
+    });
+
     it("publishes only the public register data", () => {
       const state = sim.getLedger();
+      expect(state.attested).toBe(true);
       expect(state.buildingValue).toBe(BUILDING.value);
       expect(state.seniorLiens).toBe(BUILDING.liens);
       expect(state.safeRatioPercent).toBe(BUILDING.ratioPercent);
@@ -68,10 +87,68 @@ describe("SafeJeonse contract", () => {
       expect(
         () =>
           new SafeJeonseSimulator(randomBytes(32), {
-            ...BUILDING,
             ratioPercent: 101n,
           }),
       ).toThrow(/Safe ratio/);
+    });
+  });
+
+  describe("registry office attestation", () => {
+    it("embeds the official registry key in the contract", () => {
+      expect(pureCircuits.officialRegistry()).toEqual(
+        rolePublicKey("registrar", demoRegistrySecretKey()),
+      );
+    });
+
+    it("rejects any registrar key other than the official one", () => {
+      // A landlord who invents their own "registry office" gets nowhere.
+      const fakeOffice = createSafeJeonsePrivateState(randomBytes(32));
+      expect(() => sim.as(fakeOffice).attestRegister(90_000n, 0n)).toThrow(
+        /Only the registry office/,
+      );
+      const landlordAsOffice = createSafeJeonsePrivateState(landlordKey);
+      expect(() =>
+        sim.as(landlordAsOffice).attestRegister(90_000n, 0n),
+      ).toThrow(/Only the registry office/);
+    });
+
+    it("rejects register data from anyone but the registrar", () => {
+      expect(() => sim.as(landlord([])).attestRegister(90_000n, 0n)).toThrow(
+        /Only the registry office/,
+      );
+      expect(() =>
+        sim.as(tenant(opening(1n))).attestRegister(90_000n, 0n),
+      ).toThrow(/Only the registry office/);
+      expect(sim.getLedger().buildingValue).toBe(BUILDING.value);
+    });
+
+    it("refuses to certify before the building is attested", () => {
+      const fresh = deploy();
+      expect(() => fresh.as(landlord([])).certify(1_000n)).toThrow(
+        /has not attested/,
+      );
+    });
+
+    it("rejects a zero building value", () => {
+      expect(() => sim.as(registrar()).attestRegister(0n, 0n)).toThrow(
+        /Building value must be positive/,
+      );
+    });
+
+    it("turns a SAFE deposit RISKY when a new mortgage is registered", () => {
+      const deposit = opening(10_000n);
+      sim.as(tenant(deposit)).declareDeposit();
+      // 20,000 + 10,000 + 5,000 = 35,000 <= 35,000
+      expect(sim.as(landlord([deposit])).certify(5_000n)).toBe(true);
+      const issuedAt = sim.getLedger().certRevision;
+
+      // The landlord takes another loan: liens rise to 2억 5,000만.
+      sim.as(registrar()).attestRegister(BUILDING.value, 25_000n);
+      const state = sim.getLedger();
+      expect(state.revision).toBeGreaterThan(issuedAt);
+      expect(state.attestCount).toBe(2n);
+
+      expect(sim.as(landlord([deposit])).certify(5_000n)).toBe(false);
     });
   });
 
