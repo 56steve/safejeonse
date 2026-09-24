@@ -24,7 +24,12 @@ import { CompiledSafeJeonseContract } from '../../contract/src/index';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { BehaviorSubject, combineLatest, map, type Observable } from 'rxjs';
-import { type SafeJeonsePrivateState, createSafeJeonsePrivateState, MAX_UNITS } from '../../contract/src/witnesses.js';
+import {
+  type DepositOpening,
+  type SafeJeonsePrivateState,
+  createSafeJeonsePrivateState,
+  MAX_UNITS,
+} from '../../contract/src/witnesses.js';
 import { assertValidAmount, decodeLeaseCode, encodeLeaseCode, newOpening, resolveLeaseBook } from './lease.js';
 import { deriveState } from './derive.js';
 
@@ -131,17 +136,39 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
    */
   async certify(newDeposit: bigint): Promise<boolean> {
     assertValidAmount(newDeposit);
+    const ledger = await this.queryLedger();
+    const leaseBook = resolveLeaseBook(ledger.declarations, this.privateState$.value.issuedLeases);
+    return this.certifyWithLeaseBook(newDeposit, leaseBook);
+  }
+
+  /**
+   * Landlord: certify using an explicit per-slot list of openings, skipping the
+   * app-side matching. The circuit still checks every opening against the
+   * on-chain commitments, so wrong numbers make proof generation fail.
+   */
+  async certifyWithLeaseBook(newDeposit: bigint, leaseBook: ReadonlyArray<DepositOpening | null>): Promise<boolean> {
+    assertValidAmount(newDeposit);
+    if (leaseBook.length > MAX_UNITS) {
+      throw new RangeError(`A lease book has at most ${MAX_UNITS} entries`);
+    }
+    await this.updatePrivateState((ps) => ({ ...ps, leaseBook }));
+    const txData = await this.deployedContract.callTx.certify(newDeposit);
+    this.logTx('certify', txData.public);
+    return txData.private.result;
+  }
+
+  /** Reads the latest ledger and combines it with this user's private state. */
+  async currentState(): Promise<SafeJeonseDerivedState> {
+    return deriveState(await this.queryLedger(), this.privateState$.value);
+  }
+
+  /** The raw public ledger: exactly what anyone watching the chain can see. */
+  async queryLedger(): Promise<SafeJeonse.Ledger> {
     const contractState = await this.providers.publicDataProvider.queryContractState(this.deployedContractAddress);
     if (contractState === null) {
       throw new Error(`No contract found at ${this.deployedContractAddress}`);
     }
-    const ledger = SafeJeonse.ledger(contractState.data);
-    const leaseBook = resolveLeaseBook(ledger.declarations, this.privateState$.value.issuedLeases);
-    await this.updatePrivateState((ps) => ({ ...ps, leaseBook }));
-
-    const txData = await this.deployedContract.callTx.certify(newDeposit);
-    this.logTx('certify', txData.public);
-    return txData.private.result;
+    return SafeJeonse.ledger(contractState.data);
   }
 
   private async updatePrivateState(update: (current: SafeJeonsePrivateState) => SafeJeonsePrivateState): Promise<void> {

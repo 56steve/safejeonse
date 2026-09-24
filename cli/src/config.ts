@@ -29,7 +29,11 @@ export interface Config {
   readonly zkConfigPath: string;
   getEnvironment(logger: Logger): TestEnvironment;
   readonly generateDust: boolean;
+  /** Encrypts the local private state store. Override with SAFEJEONSE_STORAGE_PASSWORD. */
+  readonly privateStoragePassword: string;
 }
+
+const storagePassword = (): string => process.env.SAFEJEONSE_STORAGE_PASSWORD ?? 'SafeJeonse-Local-2026!';
 
 export const currentDir = path.resolve(new URL(import.meta.url).pathname, '..');
 
@@ -37,10 +41,11 @@ export class StandaloneConfig implements Config {
   getEnvironment(logger: Logger): TestEnvironment {
     return getTestEnvironment(logger) as TestEnvironment;
   }
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'safejeonse-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'standalone', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'safejeonse');
   generateDust = false;
+  privateStoragePassword = storagePassword();
 }
 
 export class PreviewRemoteConfig implements Config {
@@ -48,10 +53,11 @@ export class PreviewRemoteConfig implements Config {
     setNetworkId('preview');
     return new PreviewTestEnvironment(logger);
   }
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'safejeonse-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'preview-remote', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'safejeonse');
   generateDust = true;
+  privateStoragePassword = storagePassword();
 }
 
 export class PreprodRemoteConfig implements Config {
@@ -59,10 +65,11 @@ export class PreprodRemoteConfig implements Config {
     setNetworkId('preprod');
     return new PreprodTestEnvironment(logger);
   }
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'safejeonse-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'preprod-remote', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'safejeonse');
   generateDust = true;
+  privateStoragePassword = storagePassword();
 }
 
 export class PreviewTestEnvironment extends RemoteTestEnvironment {

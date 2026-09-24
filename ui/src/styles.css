@@ -1,0 +1,577 @@
+/* SafeJeonse (안심전세 ZK)
+   Visual language: an official Korean property register (등기부등본) on warm paper,
+   with a red seal (도장) for the verdict and sealed envelopes for hidden deposits. */
+
+:root {
+  --paper: #f4efe4;
+  --paper-deep: #ebe3d2;
+  --sheet: #fbf8f1;
+  --ink: #1d1b18;
+  --ink-soft: #5b554b;
+  --rule: #cfc4ad;
+  --rule-strong: #8f8469;
+  --seal: #c1352a;
+  --seal-deep: #8e2019;
+  --safe: #1f6b4a;
+  --safe-soft: #d9eadf;
+  --risk-soft: #f6dcd6;
+  --wax: #a3312a;
+  --focus: #1c4f9c;
+  --serif: 'Noto Serif KR', 'Nanum Myeongjo', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 18px 40px -24px rgba(58, 44, 20, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.55), transparent 42%),
+    radial-gradient(circle at 88% 92%, rgba(143, 132, 105, 0.12), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(90, 70, 30, 0.018) 0 1px, transparent 1px 3px);
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 3px double var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: clamp(30px, 5vw, 46px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.masthead h1 small {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.masthead p {
+  margin: 0;
+  max-width: 420px;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* ---------- sheet (document card) ---------- */
+
+.sheet {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow);
+  padding: 26px 28px;
+  position: relative;
+}
+
+.sheet + .sheet {
+  margin-top: 22px;
+}
+
+.sheet-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 8px;
+  margin: 0 0 18px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.sheet-title span {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- register table ---------- */
+
+.register {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.register th,
+.register td {
+  border: 1px solid var(--rule);
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.register th {
+  width: 38%;
+  background: var(--paper-deep);
+  font-weight: 600;
+}
+
+.register td.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.register .note {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+/* ---------- sealed envelopes (deposit slots) ---------- */
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.slot {
+  aspect-ratio: 1.45;
+  border: 1px dashed var(--rule-strong);
+  display: grid;
+  place-items: center;
+  position: relative;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.slot.occupied {
+  border: 1px solid #b9a987;
+  background:
+    linear-gradient(152deg, transparent 49.4%, rgba(120, 100, 60, 0.35) 49.6%, transparent 50.2%),
+    linear-gradient(28deg, transparent 49.4%, rgba(120, 100, 60, 0.35) 49.6%, transparent 50.2%),
+    #efe5cf;
+  color: var(--ink);
+  animation: settle 420ms ease-out both;
+}
+
+.slot.occupied::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -38%);
+  background: radial-gradient(circle at 35% 35%, #d2574c, var(--wax) 60%, #6e1c16);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.slot .slot-no {
+  position: absolute;
+  top: 4px;
+  left: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.slot .slot-tag {
+  position: absolute;
+  bottom: 4px;
+  right: 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.slot.mine {
+  outline: 2px solid var(--safe);
+  outline-offset: 2px;
+}
+
+@keyframes settle {
+  from {
+    transform: translateY(-8px) rotate(-2deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ---------- certificate + seal ---------- */
+
+.certificate {
+  margin-top: 22px;
+  border: 2px solid var(--ink);
+  padding: 18px 20px;
+  position: relative;
+  min-height: 150px;
+  background: repeating-linear-gradient(-45deg, transparent 0 12px, rgba(207, 196, 173, 0.18) 12px 13px), var(--sheet);
+}
+
+.certificate h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  letter-spacing: 0.24em;
+}
+
+.certificate p {
+  margin: 4px 0;
+  max-width: 62%;
+}
+
+.certificate.stale {
+  opacity: 0.72;
+}
+
+.seal {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  width: 116px;
+  height: 116px;
+  margin-top: -58px;
+  border-radius: 50%;
+  border: 5px solid currentColor;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-weight: 900;
+  line-height: 1.05;
+  transform: rotate(-12deg);
+  mix-blend-mode: multiply;
+  animation: stamp 520ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.seal::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+.seal b {
+  font-size: 36px;
+  display: block;
+}
+
+.seal i {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+}
+
+.seal.safe {
+  color: var(--safe);
+}
+
+.seal.risk {
+  color: var(--seal);
+}
+
+@keyframes stamp {
+  0% {
+    transform: scale(2.4) rotate(-4deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.94) rotate(-13deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-12deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seal,
+  .slot.occupied {
+    animation: none;
+  }
+}
+
+/* ---------- personas ---------- */
+
+.personas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.persona {
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background 150ms ease;
+}
+
+.persona small {
+  display: block;
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.persona[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+}
+
+.persona[aria-pressed='true'] small {
+  color: #d8d1c2;
+}
+
+/* ---------- forms ---------- */
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.field > span {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.field input {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px solid var(--ink);
+  background: transparent;
+  padding: 6px 2px;
+  font-size: 17px;
+}
+
+.field input.code {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.field em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+.btn {
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn.seal-btn {
+  background: var(--seal);
+  border-color: var(--seal-deep);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.panel h3 {
+  margin: 22px 0 8px;
+  font-size: 16px;
+}
+
+.panel h3:first-child {
+  margin-top: 0;
+}
+
+.explain {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+}
+
+.code-box {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.notice {
+  border-left: 4px solid var(--ink);
+  padding: 8px 12px;
+  margin: 12px 0;
+  font-size: 14px;
+  background: var(--paper-deep);
+}
+
+.notice.error {
+  border-color: var(--seal);
+  background: var(--risk-soft);
+}
+
+.notice.ok {
+  border-color: var(--safe);
+  background: var(--safe-soft);
+}
+
+.busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-top: 10px;
+}
+
+.busy::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule-strong);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- raw ledger ---------- */
+
+details.raw summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+details.raw pre {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--ink);
+  color: #e8e1d2;
+  padding: 14px;
+  overflow-x: auto;
+  margin: 12px 0 0;
+}
+
+.address {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--ink-soft);
+}
+
+.footer {
+  margin-top: 40px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+}
+
+@media (max-width: 520px) {
+  .slots {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .certificate p {
+    max-width: 100%;
+  }
+  .seal {
+    position: relative;
+    right: auto;
+    top: auto;
+    margin: 16px 0 0 auto;
+  }
+}
