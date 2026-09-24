@@ -3,9 +3,8 @@
 
 /* Plain-text rendering of SafeJeonse state for the terminal. */
 
-import { type SafeJeonseDerivedState, formatManwon } from '../../api/src/index';
-import { type Ledger, pureCircuits } from '../../contract/src/managed/safejeonse/contract/index.js';
-import { toHex } from '@midnight-ntwrk/midnight-js-utils';
+import { type SafeJeonseDerivedState, formatManwon, ledgerRows } from '../../api/src/index';
+import { type Ledger } from '../../contract/src/managed/safejeonse/contract/index.js';
 
 const useColor = process.stdout.isTTY && process.env.NO_COLOR === undefined;
 const paint = (code: number) => (text: string) => (useColor ? `\x1b[${code}m${text}\x1b[0m` : text);
@@ -66,31 +65,10 @@ export const renderPrivate = (state: SafeJeonseDerivedState): string[] => {
 };
 
 /** Everything stored on-chain, printed raw, to show that no deposit amount is in it. */
-export const renderRawLedger = (ledger: Ledger): string[] => {
-  const short = (bytes: Uint8Array) => `${toHex(bytes).slice(0, 16)}…`;
-  const lines = [
-    `landlord          ${short(ledger.landlord)}`,
-    `buildingValue     ${ledger.buildingValue}`,
-    `seniorLiens       ${ledger.seniorLiens}`,
-    `safeRatioPercent  ${ledger.safeRatioPercent}`,
-    `declaredCount     ${ledger.declaredCount}`,
-    `revision          ${ledger.revision}`,
-  ];
-  const empty = toHex(pureCircuits.emptyCommitment());
-  const slots = Array.from(ledger.declarations).sort(([a], [b]) => (a < b ? -1 : 1));
-  for (const [slot, commitment] of slots) {
-    const label = toHex(commitment) === empty ? dim('  (empty slot)') : '';
-    lines.push(`declarations[${slot}]   ${short(commitment)}${label}`);
-  }
-  lines.push(
-    `certIssued        ${ledger.certIssued}`,
-    `certNewDeposit    ${ledger.certNewDeposit}`,
-    `certSafe          ${ledger.certSafe}`,
-    `certRevision      ${ledger.certRevision}`,
-    `certCount         ${ledger.certCount}`,
+export const renderRawLedger = (ledger: Ledger): string[] =>
+  ledgerRows(ledger).map(
+    (row) => `${row.label.padEnd(18)}${row.value}${row.emptySlot === true ? dim('  (empty slot)') : ''}`,
   );
-  return lines;
-};
 
 export const printBlock = (lines: string[]): void => {
   for (const line of lines) {

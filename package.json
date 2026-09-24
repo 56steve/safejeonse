@@ -74,6 +74,7 @@
     "build": "npm run build -w contract && npm run build -w api && npm run build -w cli && npm run build -w ui",
     "demo": "npm run demo -w cli",
     "start:local": "npm run standalone -w cli",
-    "start:preprod": "npm run preprod-remote -w cli"
+    "start:preprod": "npm run preprod-remote -w cli",
+    "web": "npm run build:local -w ui && npm run web -w cli"
   }
 }

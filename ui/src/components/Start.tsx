@@ -3,15 +3,12 @@
 
 import React, { useState } from 'react';
 import { formatManwon } from '../../../api/src/index';
-import { type BuildingManager } from '../manager';
+import { type Backend } from '../backend';
 import { parseManwon, useAction } from './useAction';
 
 const HEX_ADDRESS = /^[0-9a-f]{64,}$/i;
 
-export const Start: React.FC<{ manager: BuildingManager; onReady: (address: string) => void }> = ({
-  manager,
-  onReady,
-}) => {
+export const Start: React.FC<{ backend: Backend; onReady: (address: string) => void }> = ({ backend, onReady }) => {
   const [value, setValue] = useState('50000');
   const [liens, setLiens] = useState('20000');
   const [ratio, setRatio] = useState('70');
@@ -28,10 +25,14 @@ export const Start: React.FC<{ manager: BuildingManager; onReady: (address: stri
     if (buildingValue === null || seniorLiens === null || !ratioValid) {
       return;
     }
-    void register('Connecting to your wallet and deploying. This can take a minute.', async () => {
-      const api = await manager.register({ buildingValue, seniorLiens, safeRatioPercent: BigInt(ratioNumber) });
-      onReady(api.deployedContractAddress);
-      return api.deployedContractAddress;
+    const label =
+      backend.kind === 'lace'
+        ? 'Connecting to your wallet and deploying. This can take a minute.'
+        : 'Deploying the contract on the local network. This takes about 20 seconds.';
+    void register(label, async () => {
+      const address = await backend.register({ buildingValue, seniorLiens, safeRatioPercent: BigInt(ratioNumber) });
+      onReady(address);
+      return address;
     });
   };
 
@@ -87,8 +88,9 @@ export const Start: React.FC<{ manager: BuildingManager; onReady: (address: stri
           Open building
         </button>
         <div className="notice" style={{ marginTop: 22 }}>
-          You need the Lace wallet set to Midnight {String(import.meta.env.VITE_NETWORK_ID)}, with the proof server set
-          to Local, and a little tDUST for fees.
+          {backend.kind === 'lace'
+            ? `You need the Lace wallet set to Midnight ${String(import.meta.env.VITE_NETWORK_ID)}, with the proof server set to Local, and a little tDUST for fees.`
+            : 'Running against a local Midnight network. Proofs are built on this machine, so no wallet is needed.'}
         </div>
       </section>
     </main>

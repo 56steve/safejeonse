@@ -14,7 +14,8 @@
     "preview-remote": "node --experimental-specifier-resolution=node --loader ts-node/esm src/launcher/preview.ts",
     "preprod-remote": "node --experimental-specifier-resolution=node --loader ts-node/esm src/launcher/preprod.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "demo": "node --experimental-specifier-resolution=node --loader ts-node/esm src/launcher/demo.ts"
+    "demo": "node --experimental-specifier-resolution=node --loader ts-node/esm src/launcher/demo.ts",
+    "web": "node --experimental-specifier-resolution=node --loader ts-node/esm src/launcher/web.ts"
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.15",

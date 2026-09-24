@@ -96,7 +96,7 @@ compact update 0.31.0
 ```bash
 npm install
 npm run compact     # compiles the contract and generates the ZK circuits
-npm test            # 35 tests: contract circuits + API logic
+npm test            # 40 tests: contract circuits + API logic
 ```
 
 Expected output from `npm run compact`:
@@ -157,7 +157,28 @@ npm run start:local
 
 The menu lets you register a building, create lease codes, and switch between the landlord, tenant and renter personas. Each persona has its own private state.
 
-### 4. Web app (Lace wallet, preprod)
+### 4. Web app, no wallet needed (recommended)
+
+```bash
+npm run web
+```
+
+This starts the same local Midnight network and serves the web app at <http://localhost:8787>. Proofs are built and transactions submitted on your machine, so there's no wallet extension, faucet or testnet account to set up.
+
+A walk-through that matches the terminal demo:
+
+1. Keep the defaults and click **Register building**.
+2. As **임대인 Landlord**, create a lease code for `8000` and copy it.
+3. Switch to **임차인 A Tenant**, paste the code and click **Seal deposit on-chain**.
+4. Back as the landlord, create a code for `5000`. Seal it as **임차인 B Tenant**.
+5. As the landlord, enter `7000` and click **Issue certificate**. The register gets a red 위험 (RISKY) seal.
+6. Switch to **예비 임차인 Renter** and open **Show exactly what is stored on-chain**. There is no deposit amount anywhere.
+
+One browser plays every role so you can walk through the flow. In real use each role is a different person on their own device, and each role here still keeps its own private state.
+
+### 5. Web app on Preprod with Lace (optional)
+
+The same UI can run against Midnight Preprod through the [Lace wallet](https://www.lace.io/):
 
 ```bash
 npm run build -w contract
@@ -165,9 +186,7 @@ npm run build -w ui
 npx http-server ui/dist -p 8080 -s
 ```
 
-Then open <http://localhost:8080>. You'll need the [Lace wallet](https://www.lace.io/) with Midnight set to **Preprod**, the proof server set to **Local** (run `docker run -p 6300:6300 midnightntwrk/proof-server:8.0.3 midnight-proof-server -v`), and some tDUST from the [faucet](https://midnight-tmnight-preprod.nethermind.dev/).
-
-The web app lets one browser play every role so you can walk through the flow. In real use each role is a different person on their own device.
+Set Lace to Midnight **Preprod** with the proof server on **Local** (`docker run -p 6300:6300 midnightntwrk/proof-server:8.0.3 midnight-proof-server -v`), and fund it from the [Preprod faucet](https://faucet.preprod.midnight.network/). This path depends on your wallet setup, so for judging we recommend the local web app above.
 
 ## Project layout
 
@@ -180,10 +199,11 @@ api/        shared TypeScript API used by the CLI and the web app
   src/index.ts                 deploy / join / declare / withdraw / certify
   src/lease.ts                 lease codes and slot matching
   src/derive.ts                public + private view state
-  src/test/                    20 tests
-cli/        terminal app and the scripted demo
+  src/test/                    25 tests
+cli/        terminal app, scripted demo and local web server
   src/demo-story.ts            the story `npm run demo` runs
-ui/         React web app (Lace wallet)
+  src/web-server.ts            backend for `npm run web`
+ui/         React web app (local server or Lace wallet)
 ```
 
 ## Limitations

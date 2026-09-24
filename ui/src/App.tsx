@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import React, { useEffect, useState } from 'react';
-import { type Logger } from 'pino';
-import { type SafeJeonseAPI, type SafeJeonseDerivedState } from '../../api/src/index';
-import { BuildingManager, PERSONAS, type Persona } from './manager';
+import { type LedgerRow, type SafeJeonseDerivedState } from '../../api/src/index';
+import { type Backend, type BuildingSession, PERSONAS, type Persona } from './backend';
 import { Register } from './components/Register';
 import { LandlordPanel, RenterPanel, TenantPanel } from './components/Panels';
 import { Start } from './components/Start';
@@ -23,11 +22,10 @@ const writeAddressToUrl = (address: string): void => {
 type Connection =
   | { kind: 'none' }
   | { kind: 'connecting' }
-  | { kind: 'ready'; api: SafeJeonseAPI }
+  | { kind: 'ready'; session: BuildingSession }
   | { kind: 'failed'; message: string };
 
-const App: React.FC<{ logger: Logger }> = ({ logger }) => {
-  const [manager] = useState(() => new BuildingManager(logger));
+const App: React.FC<{ backend: Backend }> = ({ backend }) => {
   const [address, setAddress] = useState<string | null>(readAddressFromUrl);
   const [persona, setPersona] = useState<Persona>('landlord');
   const [connection, setConnection] = useState<Connection>({ kind: 'none' });
@@ -39,23 +37,23 @@ const App: React.FC<{ logger: Logger }> = ({ logger }) => {
       return;
     }
     let cancelled = false;
-    manager.open(address);
+    backend.open(address);
     setConnection({ kind: 'connecting' });
-    manager.as(persona).then(
-      (api) => !cancelled && setConnection({ kind: 'ready', api }),
+    backend.as(persona).then(
+      (session) => !cancelled && setConnection({ kind: 'ready', session }),
       (error: unknown) => !cancelled && setConnection({ kind: 'failed', message: errorMessage(error) }),
     );
     return () => {
       cancelled = true;
     };
-  }, [manager, address, persona]);
+  }, [backend, address, persona]);
 
   // Follow the combined public + private state of the active persona.
   useEffect(() => {
     if (connection.kind !== 'ready') {
       return;
     }
-    const subscription = connection.api.state$.subscribe({
+    const subscription = connection.session.state$.subscribe({
       next: setState,
       error: (error: unknown) => setConnection({ kind: 'failed', message: errorMessage(error) }),
     });
@@ -79,7 +77,7 @@ const App: React.FC<{ logger: Logger }> = ({ logger }) => {
       </header>
 
       {address === null ? (
-        <Start manager={manager} onReady={onBuildingReady} />
+        <Start backend={backend} onReady={onBuildingReady} />
       ) : (
         <main className="layout">
           <div>
@@ -121,11 +119,11 @@ const App: React.FC<{ logger: Logger }> = ({ logger }) => {
 
             {connection.kind === 'ready' && state !== null ? (
               persona === 'landlord' ? (
-                <LandlordPanel api={connection.api} state={state} />
+                <LandlordPanel session={connection.session} state={state} />
               ) : persona === 'renter' ? (
                 <RenterPanel state={state} />
               ) : (
-                <TenantPanel key={persona} api={connection.api} state={state} />
+                <TenantPanel key={persona} session={connection.session} state={state} />
               )
             ) : connection.kind === 'failed' ? (
               <div className="notice error">{connection.message}</div>
@@ -141,7 +139,9 @@ const App: React.FC<{ logger: Logger }> = ({ logger }) => {
         </main>
       )}
 
-      {state !== null && connection.kind === 'ready' && <RawLedger api={connection.api} revision={state.revision} />}
+      {state !== null && connection.kind === 'ready' && (
+        <RawLedger session={connection.session} revision={state.revision} />
+      )}
 
       <footer className="footer">
         Built on Midnight. Deposits are stored as salted commitments and checked inside a zero-knowledge circuit.
@@ -151,37 +151,24 @@ const App: React.FC<{ logger: Logger }> = ({ logger }) => {
   );
 };
 
-const RawLedger: React.FC<{ api: SafeJeonseAPI; revision: bigint }> = ({ api, revision }) => {
-  const [text, setText] = useState('');
+const RawLedger: React.FC<{ session: BuildingSession; revision: bigint }> = ({ session, revision }) => {
+  const [rows, setRows] = useState<LedgerRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    api.queryLedger().then(
-      (ledger) => {
-        if (cancelled) {
-          return;
+    session.ledgerRows().then(
+      (next) => {
+        if (!cancelled) {
+          setRows(next);
+          setError(null);
         }
-        const hex = (b: Uint8Array) =>
-          Array.from(b.slice(0, 10), (x) => x.toString(16).padStart(2, '0')).join('') + '…';
-        const lines = [
-          `landlord          ${hex(ledger.landlord)}`,
-          `buildingValue     ${ledger.buildingValue}`,
-          `seniorLiens       ${ledger.seniorLiens}`,
-          `safeRatioPercent  ${ledger.safeRatioPercent}`,
-          `declaredCount     ${ledger.declaredCount}`,
-          `revision          ${ledger.revision}`,
-          ...Array.from(ledger.declarations, ([slot, c]) => `declarations[${slot}]   ${hex(c)}`),
-          `certNewDeposit    ${ledger.certNewDeposit}`,
-          `certSafe          ${ledger.certSafe}`,
-          `certRevision      ${ledger.certRevision}`,
-        ];
-        setText(lines.join('\n'));
       },
-      (error: unknown) => !cancelled && setText(`Could not read the ledger: ${errorMessage(error)}`),
+      (failure: unknown) => !cancelled && setError(errorMessage(failure)),
     );
     return () => {
       cancelled = true;
     };
-  }, [api, revision]);
+  }, [session, revision]);
 
   return (
     <section className="sheet">
@@ -190,7 +177,13 @@ const RawLedger: React.FC<{ api: SafeJeonseAPI; revision: bigint }> = ({ api, re
         <p className="explain" style={{ marginTop: 10 }}>
           This is everything anyone can read from the contract. There is no deposit amount in it.
         </p>
-        <pre>{text}</pre>
+        <pre>
+          {error !== null
+            ? `Could not read the ledger: ${error}`
+            : rows
+                .map((row) => `${row.label.padEnd(18)}${row.value}${row.emptySlot === true ? '  (empty slot)' : ''}`)
+                .join('\n')}
+        </pre>
       </details>
     </section>
   );

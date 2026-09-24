@@ -241,3 +241,4 @@ export * as utils from './utils/index.js';
 export * from './common-types.js';
 export * from './lease.js';
 export * from './derive.js';
+export * from './wire.js';

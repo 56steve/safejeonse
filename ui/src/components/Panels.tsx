@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import React, { useMemo, useState } from 'react';
-import { type SafeJeonseAPI, type SafeJeonseDerivedState, decodeLeaseCode, formatManwon } from '../../../api/src/index';
+import { type SafeJeonseDerivedState, decodeLeaseCode, formatManwon } from '../../../api/src/index';
+import { type BuildingSession } from '../backend';
 import { type ActionStatus, errorMessage, parseManwon, useAction } from './useAction';
 
-const Status: React.FC<{ status: ActionStatus<unknown>; done?: React.ReactNode }> = ({ status, done }) => {
+const Status: React.FC<{ status: ActionStatus<unknown>; done?: React.ReactNode; neutral?: boolean }> = ({
+  status,
+  done,
+  neutral = false,
+}) => {
   switch (status.kind) {
     case 'busy':
       return (
@@ -20,17 +25,17 @@ const Status: React.FC<{ status: ActionStatus<unknown>; done?: React.ReactNode }
         </div>
       );
     case 'done':
-      return done === undefined ? null : <div className="notice ok">{done}</div>;
+      return done === undefined ? null : <div className={neutral ? 'notice' : 'notice ok'}>{done}</div>;
     default:
       return null;
   }
 };
 
-type PanelProps = { api: SafeJeonseAPI; state: SafeJeonseDerivedState };
+type PanelProps = { session: BuildingSession; state: SafeJeonseDerivedState };
 
 /* ------------------------------------------------------------------ landlord */
 
-export const LandlordPanel: React.FC<PanelProps> = ({ api, state }) => {
+export const LandlordPanel: React.FC<PanelProps> = ({ session, state }) => {
   const [leaseAmount, setLeaseAmount] = useState('');
   const [codeStatus, createCode] = useAction<string>();
   const [offerAmount, setOfferAmount] = useState('');
@@ -67,7 +72,7 @@ export const LandlordPanel: React.FC<PanelProps> = ({ api, state }) => {
       <button
         className="btn"
         disabled={lease === null || codeStatus.kind === 'busy'}
-        onClick={() => lease !== null && void createCode('Creating code', () => api.createLeaseCode(lease))}
+        onClick={() => lease !== null && void createCode('Creating code', () => session.createLeaseCode(lease))}
       >
         Create lease code
       </button>
@@ -76,7 +81,7 @@ export const LandlordPanel: React.FC<PanelProps> = ({ api, state }) => {
 
       <h3>2. Prove a new deposit is safe</h3>
       <p className="explain">
-        Your browser builds a zero-knowledge proof over every sealed deposit. Only the verdict is published.
+        A zero-knowledge proof is built over every sealed deposit, on your own machine. Only the verdict is published.
       </p>
       <label className="field">
         <span>New deposit being offered (만원)</span>
@@ -93,13 +98,14 @@ export const LandlordPanel: React.FC<PanelProps> = ({ api, state }) => {
         disabled={offer === null || certStatus.kind === 'busy'}
         onClick={() =>
           offer !== null &&
-          void certify('Building the proof and submitting. This can take a minute.', () => api.certify(offer))
+          void certify('Building the proof and submitting. This can take a minute.', () => session.certify(offer))
         }
       >
         Issue certificate
       </button>
       <Status
         status={certStatus}
+        neutral
         done={
           certStatus.kind === 'done' && (certStatus.value ? 'Certificate issued: SAFE' : 'Certificate issued: RISKY')
         }
@@ -130,7 +136,7 @@ const CopyCode: React.FC<{ code: string }> = ({ code }) => {
 
 /* -------------------------------------------------------------------- tenant */
 
-export const TenantPanel: React.FC<PanelProps> = ({ api, state }) => {
+export const TenantPanel: React.FC<PanelProps> = ({ session, state }) => {
   const [code, setCode] = useState('');
   const [declareStatus, declare, resetDeclare] = useAction<bigint>();
   const [withdrawStatus, withdraw] = useAction<void>();
@@ -150,8 +156,8 @@ export const TenantPanel: React.FC<PanelProps> = ({ api, state }) => {
     <div className="panel">
       <h3>Seal my deposit</h3>
       <p className="explain">
-        Paste the code from your landlord. Your browser proves you know the amount and puts only a salted hash on-chain.
-        After this, the landlord can&apos;t leave your deposit out or make it look smaller.
+        Paste the code from your landlord. A proof on your own machine shows you know the amount, and only a salted hash
+        goes on-chain. After this, the landlord can&apos;t leave your deposit out or make it look smaller.
       </p>
       <label className="field">
         <span>Lease code</span>
@@ -174,7 +180,7 @@ export const TenantPanel: React.FC<PanelProps> = ({ api, state }) => {
       <button
         className="btn"
         disabled={preview === null || !('amount' in preview) || declareStatus.kind === 'busy'}
-        onClick={() => void declare('Building the proof and submitting', () => api.declareDeposit(code))}
+        onClick={() => void declare('Building the proof and submitting', () => session.declareDeposit(code))}
       >
         Seal deposit on-chain
       </button>
@@ -196,7 +202,7 @@ export const TenantPanel: React.FC<PanelProps> = ({ api, state }) => {
             <button
               className="btn ghost"
               disabled={withdrawStatus.kind === 'busy'}
-              onClick={() => void withdraw('Releasing slot', () => api.withdrawDeposit(deposit.slot))}
+              onClick={() => void withdraw('Releasing slot', () => session.withdrawDeposit(deposit.slot))}
             >
               I moved out
             </button>

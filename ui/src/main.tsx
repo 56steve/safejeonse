@@ -10,11 +10,16 @@ import { setNetworkId, type NetworkId } from '@midnight-ntwrk/midnight-js-networ
 import '@midnight-ntwrk/dapp-connector-api';
 import * as pino from 'pino';
 import App from './App';
+import { type Backend } from './backend';
+import { LaceBackend } from './lace-backend';
+import { LocalBackend } from './local-backend';
 
 const networkId = import.meta.env.VITE_NETWORK_ID as NetworkId;
 setNetworkId(networkId);
 
 const logger = pino.pino({ level: import.meta.env.VITE_LOGGING_LEVEL as string });
+
+const backend: Backend = import.meta.env.VITE_BACKEND === 'local' ? new LocalBackend() : new LaceBackend(logger);
 
 const root = document.getElementById('root');
 if (root === null) {
@@ -23,6 +28,6 @@ if (root === null) {
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <App logger={logger} />
+    <App backend={backend} />
   </React.StrictMode>,
 );

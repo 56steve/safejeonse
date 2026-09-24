@@ -69,3 +69,11 @@ export type SafeJeonseDerivedState = {
   /** Private: number of lease codes this user created as landlord. */
   readonly leaseCodesIssued: number;
 };
+
+/** The roles the demo apps can act as. Each one keeps its own private state. */
+export const PERSONA_IDS = ['landlord', 'tenant-a', 'tenant-b', 'renter'] as const;
+
+export type Persona = (typeof PERSONA_IDS)[number];
+
+export const isPersona = (value: unknown): value is Persona =>
+  typeof value === 'string' && (PERSONA_IDS as readonly string[]).includes(value);
