@@ -1,0 +1,174 @@
+// SafeJeonse (안심전세 ZK)
+// Prove a jeonse deposit is safe without revealing any other tenant's deposit.
+// SPDX-License-Identifier: Apache-2.0
+
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// Maximum number of rental units tracked per building (다가구 주택).
+export pure circuit maxUnits(): Uint<8> {
+  return 8;
+}
+
+// A tenant's private deposit (in 만원 / 10,000 KRW) and the random salt that hides it.
+export struct DepositOpening {
+  amount: Uint<64>;
+  salt: Bytes<32>;
+}
+
+// ---------------------------------------------------------------------------
+// Public ledger state
+// ---------------------------------------------------------------------------
+
+// Public key of the registered landlord (the only party able to certify).
+export ledger landlord: Bytes<32>;
+
+// Building value and senior liens are PUBLIC in Korea (공시가격 / 등기부등본), in 만원.
+export ledger buildingValue: Uint<64>;
+export ledger seniorLiens: Uint<64>;
+
+// Maximum (liens + deposits) / value ratio considered safe, in percent.
+export ledger safeRatioPercent: Uint<8>;
+
+// slot -> hiding commitment of that tenant's deposit. Every slot always exists;
+// unused slots hold the commitment of a zero deposit.
+export ledger declarations: Map<Uint<8>, Bytes<32>>;
+
+// slot -> public key of the tenant who declared it.
+export ledger slotOwner: Map<Uint<8>, Bytes<32>>;
+
+// Number of slots handed out so far (append-only).
+export ledger declaredCount: Counter;
+
+// Bumped on every declaration change so stale certificates are detectable.
+export ledger revision: Counter;
+
+// Latest safety certificate.
+export ledger certIssued: Boolean;
+export ledger certNewDeposit: Uint<64>;
+export ledger certSafe: Boolean;
+export ledger certRevision: Uint<64>;
+export ledger certCount: Counter;
+
+// ---------------------------------------------------------------------------
+// Private inputs (never leave the user's machine)
+// ---------------------------------------------------------------------------
+
+witness localSecretKey(): Bytes<32>;
+
+// The caller's own deposit opening (used by a tenant when declaring).
+witness ownDeposit(): DepositOpening;
+
+// Openings for every slot (known to the landlord from the lease contracts).
+witness allDeposits(): Vector<8, DepositOpening>;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export circuit depositCommitment(opening: DepositOpening): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([
+    pad(32, "safejeonse:deposit:"),
+    opening.amount as Field as Bytes<32>,
+    opening.salt
+  ]);
+}
+
+export circuit emptyCommitment(): Bytes<32> {
+  return depositCommitment(DepositOpening { amount: 0, salt: pad(32, "") });
+}
+
+export circuit partyKey(role: Bytes<32>, sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "safejeonse:pk:"), role, sk]);
+}
+
+circuit landlordKey(sk: Bytes<32>): Bytes<32> {
+  return partyKey(pad(32, "landlord"), sk);
+}
+
+circuit tenantKey(sk: Bytes<32>): Bytes<32> {
+  return partyKey(pad(32, "tenant"), sk);
+}
+
+// ---------------------------------------------------------------------------
+// Deployment: the landlord registers the building with its PUBLIC register data.
+// ---------------------------------------------------------------------------
+
+constructor(value: Uint<64>, liens: Uint<64>, ratioPercent: Uint<8>) {
+  assert(value > 0, "Building value must be positive");
+  assert(ratioPercent > 0 && ratioPercent <= 100, "Safe ratio must be between 1 and 100 percent");
+  landlord = disclose(landlordKey(localSecretKey()));
+  buildingValue = disclose(value);
+  seniorLiens = disclose(liens);
+  safeRatioPercent = disclose(ratioPercent);
+  certIssued = false;
+  certSafe = false;
+  certNewDeposit = 0;
+  certRevision = 0;
+  for (const i of 0..8) {
+    declarations.insert(i as Uint<8>, emptyCommitment());
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tenant: declare my deposit as a hiding commitment. The landlord cannot
+// author, omit or lower it. Returns the slot number assigned.
+// ---------------------------------------------------------------------------
+
+export circuit declareDeposit(): Uint<8> {
+  const count = declaredCount.read();
+  assert(count < maxUnits(), "All unit slots in this building are taken");
+  const slot = count as Uint<8>;
+  const opening = ownDeposit();
+  assert(opening.amount > 0, "Deposit must be positive");
+  declarations.insert(disclose(slot), disclose(depositCommitment(opening)));
+  slotOwner.insert(disclose(slot), disclose(tenantKey(localSecretKey())));
+  declaredCount.increment(1);
+  revision.increment(1);
+  return disclose(slot);
+}
+
+// ---------------------------------------------------------------------------
+// Tenant: withdraw my declaration after my deposit has been returned (moving out).
+// Only the tenant who declared the slot can do this.
+// ---------------------------------------------------------------------------
+
+export circuit withdrawDeposit(slot: Uint<8>): [] {
+  const s = disclose(slot);
+  assert(slotOwner.member(s), "No active declaration in this slot");
+  assert(slotOwner.lookup(s) == tenantKey(localSecretKey()), "Only the declaring tenant can withdraw");
+  declarations.insert(s, emptyCommitment());
+  slotOwner.remove(s);
+  revision.increment(1);
+}
+
+// ---------------------------------------------------------------------------
+// Landlord: prove to a prospective tenant that
+//   seniorLiens + sum(all declared deposits) + newDeposit <= value * ratio%
+// Only the boolean verdict is disclosed; no individual deposit is revealed.
+// ---------------------------------------------------------------------------
+
+export circuit certify(newDeposit: Uint<64>): Boolean {
+  assert(landlord == landlordKey(localSecretKey()), "Only the registered landlord can certify");
+  const openings = allDeposits();
+  for (const i of 0..8) {
+    assert(
+      declarations.lookup(i as Uint<8>) == depositCommitment(openings[i]),
+      "Deposit openings do not match the on-chain declarations"
+    );
+  }
+  const seniorDeposits = fold(
+    (acc: Uint<128>, o: DepositOpening): Uint<128> => (acc + o.amount) as Uint<128>,
+    0 as Uint<128>,
+    openings
+  );
+  const exposure = seniorLiens + seniorDeposits + newDeposit;
+  const safe = exposure * 100 <= buildingValue * safeRatioPercent;
+  certIssued = true;
+  certNewDeposit = disclose(newDeposit);
+  certSafe = disclose(safe);
+  certRevision = revision.read();
+  certCount.increment(1);
+  return disclose(safe);
+}
