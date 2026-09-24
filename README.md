@@ -4,6 +4,15 @@
 
 Built on [Midnight](https://midnight.network/) for the Midnight Korea Hackathon 2026.
 
+## 한국어 요약
+
+**안심전세 ZK**는 전세 계약 전에 보증금이 안전한지 확인할 수 있게 해 주는 Midnight 기반 DApp입니다. 이 과정에서 다른 임차인의 보증금은 누구에게도 공개되지 않습니다.
+
+- **문제:** 다가구 주택의 선순위 보증금은 등기부등본에 나오지 않습니다. 이 정보 공백이 전세사기의 주요 원인입니다.
+- **해결:** 기존 임차인이 자신의 보증금을 해시 커밋먼트로 온체인에 봉인합니다. 임대인은 영지식 증명으로 `근저당 + 선순위 보증금 + 신규 보증금 ≤ 건물 가액의 70%`임을 증명하고, 예비 임차인은 **안전** 또는 **위험**이라는 결과만 확인합니다.
+- **Midnight 활용:** witness(비공개 입력), `persistentHash` 커밋먼트, 모든 커밋먼트를 회로 안에서 검증하는 ZK 회로, `disclose`를 통한 선택적 공개.
+- **실행:** `npm install`, `npm run compact`, `npm test` 후 `npm run demo`(터미널) 또는 `npm run web`(웹, 지갑 불필요).
+
 ## The problem
 
 In Korea, a jeonse (전세) tenant hands the landlord a huge lump-sum deposit, often most of their savings. If the building is later sold at auction, the money is paid out in order of priority: the mortgage first, then tenants who moved in earlier, and only then the new tenant.
