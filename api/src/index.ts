@@ -31,6 +31,7 @@ import {
   createSafeJeonsePrivateState,
   MAX_UNITS,
 } from '../../contract/src/witnesses.js';
+import { firstFreeSlot } from '../../contract/src/slots.js';
 import { assertValidAmount, decodeLeaseCode, encodeLeaseCode, newOpening, resolveLeaseBook } from './lease.js';
 import { deriveState } from './derive.js';
 
@@ -114,15 +115,15 @@ export class SafeJeonseAPI implements DeployedSafeJeonseAPI {
   }
 
   /**
-   * Tenant: declare the deposit from a lease code as a hidden commitment.
-   * Returns the slot the deposit was placed in.
+   * Tenant: declare the deposit from a lease code as a hidden commitment, in the
+   * first free unit slot. Returns the slot the deposit was placed in.
    */
   async declareDeposit(leaseCode: string): Promise<bigint> {
     const opening = decodeLeaseCode(leaseCode);
     await this.updatePrivateState((ps) => ({ ...ps, ownDeposit: opening }));
 
     try {
-      const txData = await this.deployedContract.callTx.declareDeposit();
+      const txData = await this.deployedContract.callTx.declareDeposit(firstFreeSlot(await this.queryLedger()));
       const slot = txData.private.result;
       this.logTx('declareDeposit', txData.public);
       await this.updatePrivateState((ps) => ({

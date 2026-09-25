@@ -6,6 +6,7 @@ import { CompiledContract } from "@midnight-ntwrk/midnight-js-protocol/compact-j
 export * from "./managed/safejeonse/contract/index.js";
 export * from "./witnesses";
 export * from "./registry";
+export * from "./slots";
 
 import * as CompiledSafeJeonse from "./managed/safejeonse/contract/index.js";
 import * as Witnesses from "./witnesses";

@@ -67,7 +67,7 @@ sequenceDiagram
 
 When anything changes, older certificates are flagged as out of date automatically:
 
-- **A tenant moves out** and withdraws their own slot after getting the deposit back.
+- **A tenant moves out** and withdraws their own slot after getting the deposit back. The freed slot is reused by the next tenant.
 - **The landlord takes out a new loan.** The registry office records the higher mortgage, which is exactly the "new loan before move-in" trick used in jeonse fraud. The landlord has to prove again, against the new numbers.
 
 ## What is public and what stays private
@@ -86,9 +86,9 @@ When anything changes, older certificates are flagged as out of date automatical
 |---|---|---|
 | **Witnesses** (private inputs) | [`safejeonse.compact:70-76`](contract/src/safejeonse.compact#L70-L76) | Deposit amounts and salts are fed into circuits from local private state and never leave the device |
 | **`persistentHash` commitments** | [`depositCommitment`](contract/src/safejeonse.compact#L82) | Each deposit is stored as `hash(domain, amount, salt)` |
-| **ZK circuit over private data** | [`certify`](contract/src/safejeonse.compact#L185) | Opens all 8 commitments inside the circuit, sums the amounts and compares against the limit |
-| **Selective disclosure (`disclose`)** | [`certify`](contract/src/safejeonse.compact#L201-L204) | Only the SAFE/RISKY boolean and the offered amount are made public |
-| **Key-bound authorization** | [`officialRegistry`](contract/src/safejeonse.compact#L13), [`attestRegister`](contract/src/safejeonse.compact#L137), [`declareDeposit`](contract/src/safejeonse.compact#L152), [`withdrawDeposit`](contract/src/safejeonse.compact#L170) | Public keys are derived from secret keys with role separation. The registry office's key is a constant in the contract, only the declaring tenant can withdraw, and only the landlord can certify |
+| **ZK circuit over private data** | [`certify`](contract/src/safejeonse.compact#L187) | Opens all 8 commitments inside the circuit, sums the amounts and compares against the limit |
+| **Selective disclosure (`disclose`)** | [`certify`](contract/src/safejeonse.compact#L203-L206) | Only the SAFE/RISKY boolean and the offered amount are made public |
+| **Key-bound authorization** | [`officialRegistry`](contract/src/safejeonse.compact#L13), [`attestRegister`](contract/src/safejeonse.compact#L137), [`declareDeposit`](contract/src/safejeonse.compact#L153), [`withdrawDeposit`](contract/src/safejeonse.compact#L171) | Public keys are derived from secret keys with role separation. The registry office's key is a constant in the contract, only the declaring tenant can withdraw, and only the landlord can certify |
 | **Ledger `Map` + `Counter` state** | [`safejeonse.compact:34-64`](contract/src/safejeonse.compact#L34-L64) | Slots, owners and a revision counter that marks stale certificates |
 
 If a landlord feeds the circuit a forged amount, proof generation fails with `Deposit openings do not match the on-chain declarations`. If the landlord tries to set the building value, it fails with `Only the registry office can attest register data`. The demo shows both on a real chain.
@@ -115,7 +115,7 @@ compact update 0.31.0
 ```bash
 npm install
 npm run compact     # compiles the contract and generates the ZK circuits
-npm test            # 48 tests: contract circuits + API logic
+npm test            # 50 tests: contract circuits + API logic
 ```
 
 Expected output from `npm run compact`:
@@ -221,7 +221,7 @@ Set Lace to Midnight **Preprod** with the proof server on **Local** (`docker run
 contract/   Compact contract, witnesses and simulator tests
   src/safejeonse.compact       the contract (4 ZK circuits)
   src/witnesses.ts             private state and witness functions
-  src/test/                    22 circuit tests (fraud cases included)
+  src/test/                    24 circuit tests (fraud cases included)
 api/        shared TypeScript API used by the CLI and the web app
   src/index.ts                 deploy / join / declare / withdraw / certify
   src/lease.ts                 lease codes and slot matching

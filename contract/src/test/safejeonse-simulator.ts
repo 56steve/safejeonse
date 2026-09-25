@@ -20,6 +20,7 @@ import {
   createSafeJeonsePrivateState,
   witnesses,
 } from "../witnesses.js";
+import { firstFreeSlot } from "../slots.js";
 
 export type BuildingParams = {
   ratioPercent: bigint;
@@ -84,9 +85,15 @@ export class SafeJeonseSimulator {
     ).context;
   }
 
+  /** Declares into the first free slot, the way the apps do. */
   public declareDeposit(): bigint {
+    return this.declareDepositInSlot(firstFreeSlot(this.getLedger()));
+  }
+
+  public declareDepositInSlot(slot: bigint): bigint {
     const { context, result } = this.contract.impureCircuits.declareDeposit(
       this.circuitContext,
+      slot,
     );
     this.circuitContext = context;
     return result;
